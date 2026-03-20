@@ -41,6 +41,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	}
 
 	// 写入新的 response body
+	responseBody = helper.ReplaceResponseModel(responseBody, info)
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	// compute usage
@@ -84,7 +85,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
-			sendResponsesStreamData(c, streamResponse, data)
+			sendResponsesStreamData(c, info, streamResponse, data)
 			switch streamResponse.Type {
 			case "response.completed":
 				if streamResponse.Response != nil {

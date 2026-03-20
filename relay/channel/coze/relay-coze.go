@@ -55,7 +55,7 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	// convert coze response to openai response
 	var response dto.TextResponse
 	var cozeResponse CozeChatDetailResponse
-	response.Model = info.UpstreamModelName
+	response.Model = helper.GetResponseModelName(info)
 	err = json.Unmarshal(responseBody, &cozeResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
@@ -165,7 +165,7 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 		usage.TotalTokens = chatData.Usage.TokenCount
 
 		finishReason := "stop"
-		stopResponse := helper.GenerateStopResponse(id, common.GetTimestamp(), info.UpstreamModelName, finishReason)
+		stopResponse := helper.GenerateStopResponse(id, common.GetTimestamp(), helper.GetResponseModelName(info), finishReason)
 		helper.ObjectData(c, stopResponse)
 
 	case "conversation.message.delta":

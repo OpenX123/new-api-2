@@ -28,12 +28,16 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	}
 
 	if !forceFormat && !thinkToContent {
-		return helper.StringData(c, data)
+		return helper.StringData(c, helper.ReplaceResponseModelStr(data, info))
 	}
 
 	var lastStreamResponse dto.ChatCompletionsStreamResponse
 	if err := common.UnmarshalJsonStr(data, &lastStreamResponse); err != nil {
 		return err
+	}
+
+	if info != nil && info.IsModelMapped {
+		lastStreamResponse.Model = info.OriginModelName
 	}
 
 	if !thinkToContent {
@@ -295,6 +299,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		responseBody = geminiRespStr
 	}
 
+	responseBody = helper.ReplaceResponseModel(responseBody, info)
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &simpleResponse.Usage, nil
@@ -573,6 +578,7 @@ func OpenaiHandlerWithUsage(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 	}
 
 	// 写入新的 response body
+	responseBody = helper.ReplaceResponseModel(responseBody, info)
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	// Once we've written to the client, we should not return errors anymore

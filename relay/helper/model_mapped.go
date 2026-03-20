@@ -11,6 +11,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/sjson"
 )
 
 func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Request) error {
@@ -78,4 +79,41 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 		request.SetModelName(info.UpstreamModelName)
 	}
 	return nil
+}
+
+// GetResponseModelName returns the model name that should be shown to the client.
+// When model mapping is active, it returns the original model name the client requested.
+func GetResponseModelName(info *common.RelayInfo) string {
+	if info != nil && info.IsModelMapped {
+		return info.OriginModelName
+	}
+	if info != nil {
+		return info.UpstreamModelName
+	}
+	return ""
+}
+
+// ReplaceResponseModel replaces the "model" field in JSON response with the original model name
+// when model mapping is active. Returns the original data unchanged if no mapping is configured.
+func ReplaceResponseModel(data []byte, info *common.RelayInfo) []byte {
+	if info == nil || !info.IsModelMapped {
+		return data
+	}
+	result, err := sjson.SetBytes(data, "model", info.OriginModelName)
+	if err != nil {
+		return data
+	}
+	return result
+}
+
+// ReplaceResponseModelStr is the string version of ReplaceResponseModel.
+func ReplaceResponseModelStr(data string, info *common.RelayInfo) string {
+	if info == nil || !info.IsModelMapped {
+		return data
+	}
+	result, err := sjson.Set(data, "model", info.OriginModelName)
+	if err != nil {
+		return data
+	}
+	return result
 }

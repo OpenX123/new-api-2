@@ -65,6 +65,10 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
+	if info.IsModelMapped {
+		chatResp.Model = info.OriginModelName
+	}
+
 	if usage == nil || usage.TotalTokens == 0 {
 		text := service.ExtractOutputTextFromResponses(&responsesResp)
 		usage = service.ResponseText2Usage(c, text, info.UpstreamModelName, info.GetEstimatePromptTokens())
@@ -99,7 +103,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 	responseId := helper.GetResponseID(c)
 	createAt := time.Now().Unix()
-	model := info.UpstreamModelName
+	model := helper.GetResponseModelName(info)
 
 	var (
 		usage       = &dto.Usage{}
@@ -310,7 +314,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		switch streamResp.Type {
 		case "response.created":
 			if streamResp.Response != nil {
-				if streamResp.Response.Model != "" {
+				if streamResp.Response.Model != "" && !info.IsModelMapped {
 					model = streamResp.Response.Model
 				}
 				if streamResp.Response.CreatedAt != 0 {
@@ -435,7 +439,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 		case "response.completed":
 			if streamResp.Response != nil {
-				if streamResp.Response.Model != "" {
+				if streamResp.Response.Model != "" && !info.IsModelMapped {
 					model = streamResp.Response.Model
 				}
 				if streamResp.Response.CreatedAt != 0 {

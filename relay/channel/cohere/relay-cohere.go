@@ -128,7 +128,7 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			openaiResp.Id = responseId
 			openaiResp.Created = createdTime
 			openaiResp.Object = "chat.completion.chunk"
-			openaiResp.Model = info.UpstreamModelName
+			openaiResp.Model = helper.GetResponseModelName(info)
 			if cohereResp.IsFinished {
 				finishReason := stopReasonCohere2OpenAI(cohereResp.FinishReason)
 				openaiResp.Choices = []dto.ChatCompletionsStreamResponseChoice{
