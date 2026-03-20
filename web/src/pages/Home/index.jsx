@@ -278,36 +278,38 @@ const Home = () => {
               {/* Network SVG lines */}
               <svg
                 className='absolute inset-0 w-full h-full pointer-events-none'
+                viewBox='0 0 100 100'
+                preserveAspectRatio='none'
                 style={{ zIndex: 0 }}
               >
                 <line
-                  x1='20%' y1='30%' x2='50%' y2='50%'
+                  x1='20' y1='30' x2='50' y2='50'
                   stroke='var(--semi-color-border)'
-                  strokeWidth='1'
-                  strokeDasharray='6 4'
+                  strokeWidth='0.3'
+                  strokeDasharray='2 1.5'
                   className='network-line'
                 />
                 <line
-                  x1='80%' y1='25%' x2='50%' y2='50%'
+                  x1='80' y1='25' x2='50' y2='50'
                   stroke='var(--semi-color-border)'
-                  strokeWidth='1'
-                  strokeDasharray='6 4'
+                  strokeWidth='0.3'
+                  strokeDasharray='2 1.5'
                   className='network-line'
                   style={{ animationDelay: '1s' }}
                 />
                 <line
-                  x1='30%' y1='75%' x2='50%' y2='50%'
+                  x1='30' y1='75' x2='50' y2='50'
                   stroke='var(--semi-color-border)'
-                  strokeWidth='1'
-                  strokeDasharray='6 4'
+                  strokeWidth='0.3'
+                  strokeDasharray='2 1.5'
                   className='network-line'
                   style={{ animationDelay: '2s' }}
                 />
                 <line
-                  x1='75%' y1='70%' x2='50%' y2='50%'
+                  x1='75' y1='70' x2='50' y2='50'
                   stroke='var(--semi-color-border)'
-                  strokeWidth='1'
-                  strokeDasharray='6 4'
+                  strokeWidth='0.3'
+                  strokeDasharray='2 1.5'
                   className='network-line'
                   style={{ animationDelay: '0.5s' }}
                 />
@@ -589,6 +591,7 @@ const Home = () => {
           </div>
         </div>
       </footer>
+
     </div>
   );
 
