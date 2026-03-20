@@ -736,6 +736,186 @@ html.dark .sbg-variant-green {
   padding-right: 0 !important;
 }
 
+/* ==================== Apple-style 首页动画 ==================== */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fade-up {
+  animation: fadeUp 0.8s cubic-bezier(0.5, 0, 0, 1) both;
+}
+
+.fade-up-d1 { animation-delay: 0.1s; }
+.fade-up-d2 { animation-delay: 0.2s; }
+.fade-up-d3 { animation-delay: 0.3s; }
+.fade-up-d4 { animation-delay: 0.4s; }
+.fade-up-d5 { animation-delay: 0.5s; }
+
+/* Hero 背景光晕 */
+.hero-glow {
+  position: absolute;
+  width: 800px;
+  height: 800px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 122, 255, 0.08) 0%, transparent 70%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+html.dark .hero-glow {
+  background: radial-gradient(circle, rgba(0, 122, 255, 0.12) 0%, transparent 70%);
+}
+
+/* Apple 风格卡片 */
+.apple-card {
+  background: var(--semi-color-bg-1);
+  border-radius: 24px;
+  padding: 40px 32px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.4s ease;
+  border: 1px solid var(--semi-color-border);
+}
+
+.apple-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+html.dark .apple-card {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .apple-card:hover {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* 代码窗口 */
+.code-window {
+  background: #1e1e1e;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+}
+
+.code-header {
+  background: #2d2d2d;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+/* 图标卡片 + 浮动动画 */
+.icon-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.icon-card:hover {
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 8px 24px rgba(0, 122, 255, 0.15);
+}
+
+html.dark .icon-card {
+  background: rgba(45, 45, 45, 0.85);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+@keyframes float-node-0 {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(1deg); }
+}
+@keyframes float-node-1 {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-6px) rotate(-1deg); }
+}
+@keyframes float-node-2 {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(0.5deg); }
+}
+@keyframes float-node-3 {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-7px) rotate(-0.5deg); }
+}
+
+.float-node-0 { animation: float-node-0 3s ease-in-out infinite; }
+.float-node-1 { animation: float-node-1 3.5s ease-in-out infinite 0.3s; }
+.float-node-2 { animation: float-node-2 4s ease-in-out infinite 0.6s; }
+.float-node-3 { animation: float-node-3 4.5s ease-in-out infinite 0.9s; }
+
+/* 端点滚动动画 */
+.endpoint-scroller {
+  height: 24px;
+  overflow: hidden;
+  position: relative;
+}
+
+.endpoint-scroller ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  animation: scrollEndpoints 15s linear infinite;
+}
+
+.endpoint-scroller li {
+  height: 24px;
+  line-height: 24px;
+  white-space: nowrap;
+}
+
+@keyframes scrollEndpoints {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+
+/* 网络 SVG 脉冲 */
+@keyframes pulse-line {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.6; }
+}
+
+.network-line {
+  animation: pulse-line 3s ease-in-out infinite;
+}
+
+/* Apple 文字渐变 */
+.text-gradient {
+  background: linear-gradient(135deg, #1d1d1f 0%, #6e6e73 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+html.dark .text-gradient {
+  background: linear-gradient(135deg, #f5f5f7 0%, #a1a1a6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 /* ==================== Banner 背景模糊球 ==================== */
 .blur-ball {
   position: absolute;
