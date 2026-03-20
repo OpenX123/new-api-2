@@ -71,9 +71,19 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
 	var (
-		newAPIError *types.NewAPIError
-		ws          *websocket.Conn
+		newAPIError    *types.NewAPIError
+		ws             *websocket.Conn
+		concAcquired   bool
+		concChannelId  int
 	)
+
+	releaseConcurrency := func() {
+		if concAcquired {
+			service.ReleaseChannelConcurrency(concChannelId)
+			concAcquired = false
+		}
+	}
+	defer releaseConcurrency()
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
 		var err error
@@ -187,12 +197,26 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		// Release concurrency slot from previous iteration
+		releaseConcurrency()
+
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
 			break
+		}
+
+		// Acquire concurrency slot
+		maxConc := channel.GetMaxConcurrency()
+		if maxConc > 0 {
+			if !service.TryAcquireChannelConcurrency(channel.Id, maxConc) {
+				// Should rarely happen (filtered during selection), but as a safety net
+				continue
+			}
+			concAcquired = true
+			concChannelId = channel.Id
 		}
 
 		addUsedChannel(c, channel.Id)
@@ -494,6 +518,17 @@ func RelayTask(c *gin.Context) {
 
 	var result *relay.TaskSubmitResult
 	var taskErr *dto.TaskError
+	var taskConcAcquired bool
+	var taskConcChannelId int
+
+	releaseTaskConcurrency := func() {
+		if taskConcAcquired {
+			service.ReleaseChannelConcurrency(taskConcChannelId)
+			taskConcAcquired = false
+		}
+	}
+	defer releaseTaskConcurrency()
+
 	defer func() {
 		if taskErr != nil && relayInfo.Billing != nil {
 			relayInfo.Billing.Refund(c)
@@ -508,6 +543,9 @@ func RelayTask(c *gin.Context) {
 	}
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		// Release concurrency slot from previous iteration
+		releaseTaskConcurrency()
+
 		var channel *model.Channel
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
@@ -526,6 +564,16 @@ func RelayTask(c *gin.Context) {
 				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
 				break
 			}
+		}
+
+		// Acquire concurrency slot
+		maxConc := channel.GetMaxConcurrency()
+		if maxConc > 0 {
+			if !service.TryAcquireChannelConcurrency(channel.Id, maxConc) {
+				continue
+			}
+			taskConcAcquired = true
+			taskConcChannelId = channel.Id
 		}
 
 		addUsedChannel(c, channel.Id)

@@ -68,6 +68,9 @@ func main() {
 		// for compatibility with old versions
 		common.MemoryCacheEnabled = true
 	}
+	// Inject concurrency checker into model package to avoid circular dependency
+	model.ChannelConcurrencyChecker = service.IsChannelConcurrencyAvailable
+
 	if common.MemoryCacheEnabled {
 		common.SysLog("memory cache enabled")
 		common.SysLog(fmt.Sprintf("sync frequency: %d seconds", common.SyncFrequency))

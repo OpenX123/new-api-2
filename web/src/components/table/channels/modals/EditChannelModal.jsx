@@ -181,6 +181,7 @@ const EditChannelModal = (props) => {
     groups: ['default'],
     priority: 0,
     weight: 0,
+    max_concurrency: 0,
     tag: '',
     multi_key_mode: 'random',
     // 渠道额外设置的默认值
@@ -3437,6 +3438,21 @@ const EditChannelModal = (props) => {
                           min={0}
                           onNumberChange={(value) =>
                             handleInputChange('weight', value)
+                          }
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+                    </Row>
+
+                    <Row gutter={12}>
+                      <Col span={12}>
+                        <Form.InputNumber
+                          field='max_concurrency'
+                          label={t('最大并发数')}
+                          placeholder={t('0为不限制')}
+                          min={0}
+                          onNumberChange={(value) =>
+                            handleInputChange('max_concurrency', value)
                           }
                           style={{ width: '100%' }}
                         />

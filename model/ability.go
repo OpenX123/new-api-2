@@ -121,6 +121,25 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
+		// Filter out channels that have reached max concurrency
+		if ChannelConcurrencyChecker != nil {
+			filtered := make([]Ability, 0, len(abilities))
+			for _, ability_ := range abilities {
+				ch, chErr := GetChannelById(ability_.ChannelId, false)
+				if chErr != nil {
+					continue
+				}
+				maxConc := ch.GetMaxConcurrency()
+				if maxConc > 0 && !ChannelConcurrencyChecker(ability_.ChannelId, maxConc) {
+					continue
+				}
+				filtered = append(filtered, ability_)
+			}
+			abilities = filtered
+		}
+		if len(abilities) == 0 {
+			return nil, nil
+		}
 		// Randomly choose one
 		weightSum := uint(0)
 		for _, ability_ := range abilities {

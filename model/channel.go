@@ -47,7 +47,8 @@ type Channel struct {
 	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
 	ParamOverride     *string `json:"param_override" gorm:"type:text"`
 	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	Remark         *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	MaxConcurrency *int    `json:"max_concurrency" gorm:"default:0"` // 0 表示不限制
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -418,6 +419,13 @@ func (channel *Channel) GetWeight() int {
 		return 0
 	}
 	return int(*channel.Weight)
+}
+
+func (channel *Channel) GetMaxConcurrency() int {
+	if channel.MaxConcurrency == nil {
+		return 0
+	}
+	return *channel.MaxConcurrency
 }
 
 func (channel *Channel) GetBaseURL() string {

@@ -18,6 +18,11 @@ var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
 var channelSyncLock sync.RWMutex
 
+// ChannelConcurrencyChecker checks if a channel has available concurrency slots.
+// Returns true if the channel can accept more requests.
+// Injected by service package to avoid circular dependency.
+var ChannelConcurrencyChecker func(channelId int, maxConcurrency int) bool
+
 func InitChannelCache() {
 	if !common.MemoryCacheEnabled {
 		return
@@ -117,6 +122,11 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
+			// Check concurrency limit for single channel
+			maxConc := channel.GetMaxConcurrency()
+			if maxConc > 0 && ChannelConcurrencyChecker != nil && !ChannelConcurrencyChecker(channel.Id, maxConc) {
+				return nil, nil
+			}
 			return channel, nil
 		}
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
@@ -147,6 +157,11 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
 			if channel.GetPriority() == targetPriority {
+				// Skip channels that have reached max concurrency
+				maxConc := channel.GetMaxConcurrency()
+				if maxConc > 0 && ChannelConcurrencyChecker != nil && !ChannelConcurrencyChecker(channel.Id, maxConc) {
+					continue
+				}
 				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}
