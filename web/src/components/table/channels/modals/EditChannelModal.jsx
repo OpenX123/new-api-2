@@ -3773,6 +3773,12 @@ const EditChannelModal = (props) => {
 
             {/* Desktop: Advanced Settings Side Panel - rendered inside Form tree */}
             {!isMobile && advancedSettingsOpen && (
+              <>
+              <div
+                className='fixed inset-0 z-[998]'
+                style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
+                onClick={() => setAdvancedSettingsOpen(false)}
+              />
               <div
                 className='fixed top-0 h-full overflow-y-auto z-[999] semi-sidesheet-inner'
                 style={{
@@ -3829,6 +3835,7 @@ const EditChannelModal = (props) => {
                   </div>
                 </div>
               </div>
+              </>
             )}
             </>
           );
