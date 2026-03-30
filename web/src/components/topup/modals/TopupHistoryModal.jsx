@@ -167,6 +167,19 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         key: 'trade_no',
         render: (text) => <Text copyable>{text}</Text>,
       },
+    ];
+
+    // 管理员显示用户列
+    if (userIsAdmin) {
+      baseColumns.push({
+        title: t('用户'),
+        dataIndex: 'username',
+        key: 'username',
+        render: (text) => <Text>{text || '-'}</Text>,
+      });
+    }
+
+    baseColumns.push(
       {
         title: t('支付方式'),
         dataIndex: 'payment_method',

@@ -21,6 +21,34 @@ type TopUp struct {
 	CreateTime       int64   `json:"create_time"`
 	CompleteTime     int64   `json:"complete_time"`
 	Status           string  `json:"status"`
+	Username         string  `json:"username" gorm:"-"`
+}
+
+// fillTopUpUsernames 批量填充 topups 的 Username 字段
+func fillTopUpUsernames(topups []*TopUp) {
+	if len(topups) == 0 {
+		return
+	}
+	userIDs := make([]int, 0, len(topups))
+	seen := make(map[int]bool)
+	for _, t := range topups {
+		if !seen[t.UserId] {
+			seen[t.UserId] = true
+			userIDs = append(userIDs, t.UserId)
+		}
+	}
+	var users []struct {
+		Id       int
+		Username string
+	}
+	DB.Model(&User{}).Select("id, username").Where("id IN ?", userIDs).Find(&users)
+	m := make(map[int]string, len(users))
+	for _, u := range users {
+		m[u.Id] = u.Username
+	}
+	for _, t := range topups {
+		t.Username = m[t.UserId]
+	}
 }
 
 func (topUp *TopUp) Insert() error {
@@ -164,6 +192,7 @@ func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err 
 		return nil, 0, err
 	}
 
+	fillTopUpUsernames(topups)
 	return topups, total, nil
 }
 
@@ -232,6 +261,7 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
+	fillTopUpUsernames(topups)
 	return topups, total, nil
 }
 
