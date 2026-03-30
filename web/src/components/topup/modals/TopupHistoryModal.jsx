@@ -218,7 +218,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         key: 'status',
         render: renderStatusBadge,
       },
-    ];
+    );
 
     // 管理员才显示操作列
     if (userIsAdmin) {
