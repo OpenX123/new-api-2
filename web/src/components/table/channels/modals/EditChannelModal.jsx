@@ -3600,12 +3600,7 @@ const EditChannelModal = (props) => {
             {!isMobile && advancedSettingsOpen && (
               <>
               <div
-                className='fixed inset-0 z-[998]'
-                style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
-                onClick={() => setAdvancedSettingsOpen(false)}
-              />
-              <div
-                className='fixed top-0 h-full overflow-y-auto z-[999] semi-sidesheet-inner'
+                className='fixed top-0 h-full overflow-y-auto z-[1001] semi-sidesheet-inner'
                 style={{
                   width: 600,
                   [isEdit ? 'right' : 'left']: 600,
