@@ -625,6 +625,8 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		// there's no assistant role in gemini and API shall vomit if Role is not user or model
 		if content.Role == "assistant" {
 			content.Role = "model"
+		} else if content.Role != "user" && content.Role != "model" {
+			content.Role = "user"
 		}
 		if len(content.Parts) > 0 {
 			geminiRequest.Contents = append(geminiRequest.Contents, content)
