@@ -271,7 +271,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	var systemMessages []dto.ClaudeMediaMessage
 
 	for _, message := range formatMessages {
-		if message.Role == "system" {
+		if message.Role == "system" || message.Role == "developer" {
 			// 根据Claude API规范，system字段使用数组格式更有通用性
 			if message.IsStringContent() {
 				systemMessages = append(systemMessages, dto.ClaudeMediaMessage{
