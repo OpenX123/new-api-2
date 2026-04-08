@@ -958,6 +958,9 @@ func UpdateChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if originChannel.Status == common.ChannelStatusEnabled && channel.Status != common.ChannelStatusEnabled {
+		go service.InvalidateChannelAffinityByChannelId(channel.Id)
+	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()
 	channel.Key = ""

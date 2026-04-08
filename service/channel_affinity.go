@@ -623,6 +623,27 @@ func ShouldSkipRetryAfterChannelAffinityFailure(c *gin.Context) bool {
 	return meta.SkipRetry
 }
 
+// DeleteChannelAffinityCacheEntry removes the specific affinity cache entry for the current request.
+// Used as a lazy invalidation when the affinity-matched channel is found to be disabled.
+func DeleteChannelAffinityCacheEntry(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	cacheKey, _, ok := getChannelAffinityContext(c)
+	if !ok || cacheKey == "" {
+		return
+	}
+	nsPrefix := channelAffinityCacheNamespace + ":"
+	suffix := strings.TrimPrefix(cacheKey, nsPrefix)
+	if suffix == cacheKey {
+		return
+	}
+	cache := getChannelAffinityCache()
+	if _, err := cache.DeleteMany([]string{cacheKey}); err != nil {
+		common.SysError(fmt.Sprintf("channel affinity lazy invalidate failed: key=%s, err=%v", cacheKey, err))
+	}
+}
+
 func MarkChannelAffinityUsed(c *gin.Context, selectedGroup string, channelID int) {
 	if c == nil || channelID <= 0 {
 		return
@@ -911,6 +932,53 @@ func usageTotalTokens(usage *dto.Usage) int {
 		return pt + ct
 	}
 	return 0
+}
+
+// InvalidateChannelAffinityByChannelId removes all affinity cache entries that point to the given channel.
+// This should be called when a channel is disabled to prevent requests from being routed to it.
+func InvalidateChannelAffinityByChannelId(channelId int) int {
+	if channelId <= 0 {
+		return 0
+	}
+	setting := operation_setting.GetChannelAffinitySetting()
+	if setting == nil || !setting.Enabled {
+		return 0
+	}
+	cache := getChannelAffinityCache()
+	keys, err := cache.Keys()
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity invalidate: list keys failed: channel_id=%d, err=%v", channelId, err))
+		return 0
+	}
+	if len(keys) == 0 {
+		return 0
+	}
+
+	nsPrefix := channelAffinityCacheNamespace + ":"
+	var toDelete []string
+	for _, fullKey := range keys {
+		suffix := strings.TrimPrefix(fullKey, nsPrefix)
+		if suffix == fullKey {
+			continue
+		}
+		val, found, err := cache.Get(suffix)
+		if err != nil || !found {
+			continue
+		}
+		if val == channelId {
+			toDelete = append(toDelete, fullKey)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		if _, err := cache.DeleteMany(toDelete); err != nil {
+			common.SysError(fmt.Sprintf("channel affinity invalidate: delete many failed: channel_id=%d, count=%d, err=%v", channelId, len(toDelete), err))
+		}
+	}
+	if len(toDelete) > 0 {
+		common.SysLog(fmt.Sprintf("channel affinity invalidate: cleared %d entries for channel_id=%d", len(toDelete), channelId))
+	}
+	return len(toDelete)
 }
 
 func getChannelAffinityUsageCacheStatsCache() *cachex.HybridCache[ChannelAffinityUsageCacheCounters] {
