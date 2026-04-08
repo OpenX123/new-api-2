@@ -881,6 +881,8 @@
     "启用请求透传": "Activer la transmission de la requête",
     "启用违规扣费": "Activer la déduction de violation",
     "启用额度消费日志记录": "Activer la journalisation de la consommation de quota",
+    "全局记录请求IP": "Journalisation globale des IP",
+    "开启后所有用户的请求日志都会记录IP地址": "Lorsque activé, les journaux de requêtes de tous les utilisateurs enregistreront les adresses IP",
     "启用验证": "Activer l'authentification",
     "周": "semaine",
     "命中判定：usage 中存在 cached tokens（例如 cached_tokens/prompt_cache_hit_tokens）即视为命中。": "Détermination de hit : La présence de cached tokens dans usage (ex. cached_tokens/prompt_cache_hit_tokens) est considérée comme un hit.",

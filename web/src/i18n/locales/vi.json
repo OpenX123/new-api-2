@@ -873,6 +873,8 @@
     "启用请求透传": "Bật truyền qua yêu cầu",
     "启用违规扣费": "Bật trừ phí vi phạm",
     "启用额度消费日志记录": "Bật ghi nhật ký tiêu thụ hạn ngạch",
+    "全局记录请求IP": "Ghi nhật ký IP toàn cục",
+    "开启后所有用户的请求日志都会记录IP地址": "Khi bật, nhật ký yêu cầu của tất cả người dùng sẽ ghi lại địa chỉ IP",
     "启用验证": "Bật xác thực",
     "周": "tuần",
     "命中判定：usage 中存在 cached tokens（例如 cached_tokens/prompt_cache_hit_tokens）即视为命中。": "Xác định trúng: Sự tồn tại của cached tokens trong usage (VD: cached_tokens/prompt_cache_hit_tokens) được coi là trúng.",
