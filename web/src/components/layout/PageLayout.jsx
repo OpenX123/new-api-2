@@ -22,6 +22,7 @@ import { Layout } from '@douyinfe/semi-ui';
 import SiderBar from './SiderBar';
 import App from '../../App';
 import { ToastContainer } from 'react-toastify';
+import ErrorBoundary from '../common/ErrorBoundary';
 import React, { useContext, useEffect, useState } from 'react';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
 import { useSidebarCollapsed } from '../../hooks/common/useSidebarCollapsed';
@@ -213,7 +214,9 @@ const PageLayout = () => {
               position: 'relative',
             }}
           >
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </Content>
         </Layout>
       </Layout>
