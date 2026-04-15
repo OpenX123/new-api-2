@@ -66,7 +66,8 @@ const Home = () => {
   const [noticeVisible, setNoticeVisible] = useState(false);
   const isMobile = useIsMobile();
   const isDemoSiteMode = statusState?.status?.demo_site_enabled || false;
-  const docsLink = statusState?.status?.docs_link || '';
+  const docsLink =
+    statusState?.status?.docs_link || 'https://docs.newapi.pro';
   const serverAddress =
     statusState?.status?.server_address || `${window.location.origin}`;
   const isChinese = i18n.language.startsWith('zh');
@@ -170,11 +171,11 @@ const Home = () => {
   ];
 
   const renderDefaultHome = () => (
-    <div className='w-full overflow-x-hidden'>
+    <div className='home-root w-full overflow-x-hidden'>
       {/* ===== Hero Section ===== */}
       <section
-        className='relative w-full min-h-screen flex items-center overflow-hidden'
-        style={{ background: 'var(--semi-color-bg-0)' }}
+        className='home-section-bg-0 relative w-full min-h-screen flex items-center overflow-hidden'
+        style={{ background: 'var(--semi-color-bg-0)', color: 'var(--semi-color-text-0)' }}
       >
         <div className='hero-glow' />
         <div className='w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-24 lg:py-0'>
@@ -233,7 +234,7 @@ const Home = () => {
 
               {/* CTA Buttons */}
               <div className='flex flex-row gap-4 justify-center lg:justify-start items-center mt-8 fade-up fade-up-d3'>
-                <Link to='/console'>
+                <Link to='/console/token'>
                   <Button
                     theme='solid'
                     type='primary'
@@ -340,7 +341,7 @@ const Home = () => {
 
       {/* ===== Features Section ===== */}
       <section
-        className='w-full py-20 md:py-28'
+        className='home-section-bg-1 w-full py-20 md:py-28'
         style={{ background: 'var(--semi-color-bg-1)' }}
       >
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
@@ -518,8 +519,8 @@ const Home = () => {
 
       {/* ===== CTA Section ===== */}
       <section
-        className='w-full py-20 md:py-28'
-        style={{ background: 'var(--semi-color-bg-0)' }}
+        className='home-section-bg-0 w-full py-20 md:py-28'
+        style={{ background: 'var(--semi-color-bg-0)', color: 'var(--semi-color-text-0)' }}
       >
         <div className='max-w-4xl mx-auto px-4 text-center fade-up'>
           <h2 className='text-3xl md:text-4xl lg:text-5xl font-bold text-semi-color-text-0'>
@@ -549,7 +550,7 @@ const Home = () => {
 
       {/* ===== Footer ===== */}
       <footer
-        className='w-full py-8'
+        className='home-section-bg-0 w-full py-8'
         style={{
           background: 'var(--semi-color-bg-0)',
           borderTop: '1px solid var(--semi-color-border)',
@@ -559,7 +560,7 @@ const Home = () => {
           <div className='flex flex-col md:flex-row items-center justify-between gap-4'>
             <div className='flex items-center gap-3'>
               <div
-                className='w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm'
+                className='home-brand-square w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm'
                 style={{ background: '#1d1d1f' }}
               >
                 N
@@ -587,6 +588,27 @@ const Home = () => {
                   {t('文档')}
                 </a>
               )}
+              <Link
+                to='/about'
+                className='hover:text-semi-color-text-0 transition-colors'
+                style={{ color: 'var(--semi-color-text-2)', textDecoration: 'none' }}
+              >
+                {t('关于')}
+              </Link>
+              <Link
+                to='/user-agreement'
+                className='hover:text-semi-color-text-0 transition-colors'
+                style={{ color: 'var(--semi-color-text-2)', textDecoration: 'none' }}
+              >
+                {t('服务条款')}
+              </Link>
+              <Link
+                to='/privacy-policy'
+                className='hover:text-semi-color-text-0 transition-colors'
+                style={{ color: 'var(--semi-color-text-2)', textDecoration: 'none' }}
+              >
+                {t('隐私政策')}
+              </Link>
             </div>
           </div>
         </div>

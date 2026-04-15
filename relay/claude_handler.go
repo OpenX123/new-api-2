@@ -52,18 +52,22 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		request.MaxTokens = &defaultMaxTokens
 	}
 
+	historySupportsThinking := claudeHistorySupportsThinking(request.Messages)
+
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
 		strings.HasPrefix(request.Model, "claude-opus-4-6") {
 		request.Model = baseModel
-		request.Thinking = &dto.Thinking{
-			Type: "adaptive",
+		if historySupportsThinking {
+			request.Thinking = &dto.Thinking{
+				Type: "adaptive",
+			}
+			request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
+			request.Temperature = common.GetPointer[float64](1.0)
 		}
-		request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
-		request.Temperature = common.GetPointer[float64](1.0)
 		info.UpstreamModelName = request.Model
 	} else if model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
 		strings.HasSuffix(request.Model, "-thinking") {
-		if request.Thinking == nil {
+		if request.Thinking == nil && historySupportsThinking {
 			// 因为BudgetTokens 必须大于1024
 			if request.MaxTokens == nil || *request.MaxTokens < 1280 {
 				request.MaxTokens = common.GetPointer[uint](1280)
@@ -82,6 +86,12 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			request.Model = strings.TrimSuffix(request.Model, "-thinking")
 		}
 		info.UpstreamModelName = request.Model
+	}
+
+	// 若历史 assistant tool_use 不含 thinking 块,则移除客户端/本轮自动注入的 thinking,
+	// 防止 Anthropic 返回 "thinking is enabled but reasoning_content is missing ..." 400。
+	if request.Thinking != nil && !historySupportsThinking {
+		request.Thinking = nil
 	}
 
 	// Convert 'developer' role messages to system content, as Claude API only supports 'user' and 'assistant' roles
@@ -213,4 +223,34 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	return nil
+}
+
+// claudeHistorySupportsThinking 判断历史 assistant 消息中的 tool_use 是否都带有 thinking/redacted_thinking 块。
+// 若任何一条 assistant 消息含 tool_use 但缺少 thinking,则不应向上游开启 extended thinking,
+// 否则 Anthropic 会以 "thinking is enabled but reasoning_content is missing ..." 拒绝。
+// 当历史中没有 assistant tool_use 时,默认允许开启。
+func claudeHistorySupportsThinking(messages []dto.ClaudeMessage) bool {
+	for _, msg := range messages {
+		if msg.Role != "assistant" {
+			continue
+		}
+		blocks, err := msg.ParseContent()
+		if err != nil || len(blocks) == 0 {
+			continue
+		}
+		hasToolUse := false
+		hasThinking := false
+		for _, b := range blocks {
+			switch b.Type {
+			case "tool_use":
+				hasToolUse = true
+			case "thinking", "redacted_thinking":
+				hasThinking = true
+			}
+		}
+		if hasToolUse && !hasThinking {
+			return false
+		}
+	}
+	return true
 }

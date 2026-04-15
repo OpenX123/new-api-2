@@ -1193,3 +1193,25 @@ html.dark .with-pastel-balls::before {
 }
 
 .ec-dbcd0a3c01b55203 { forced-color-adjust: auto; }
+
+/* ==================== Home 页暗色模式兜底 ==================== */
+/* 当 Semi CSS 变量未能随主题切换时，使用 html.dark 做显式兜底，防止主题只切换了一半 */
+html.dark .home-root,
+html.dark .home-root section,
+html.dark .home-root footer {
+  color: #f5f5f7;
+}
+
+html.dark .home-root .home-section-bg-0 {
+  background: #0e0e0e !important;
+}
+
+html.dark .home-root .home-section-bg-1 {
+  background: #1a1a1a !important;
+}
+
+/* 品牌方块 Logo 在深色模式下反色，避免和黑色背景融为一体 */
+html.dark .home-root .home-brand-square {
+  background: #f5f5f7 !important;
+  color: #1d1d1f !important;
+}

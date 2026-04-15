@@ -67,8 +67,9 @@ const sanitizeHtml = (html) => {
  * @param {string} title - 文档标题
  * @param {string} cacheKey - 本地存储缓存键
  * @param {string} emptyMessage - 空内容时的提示消息
+ * @param {string} fallbackContent - 管理员未配置时的默认 Markdown 内容
  */
-const DocumentRenderer = ({ apiEndpoint, title, cacheKey, emptyMessage }) => {
+const DocumentRenderer = ({ apiEndpoint, title, cacheKey, emptyMessage, fallbackContent }) => {
   const { t } = useTranslation();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
@@ -147,8 +148,24 @@ const DocumentRenderer = ({ apiEndpoint, title, cacheKey, emptyMessage }) => {
     );
   }
 
-  // 如果没有内容，显示空状态
+  // 如果没有内容：有默认内容时回落到默认内容，否则显示空状态
   if (!content || content.trim() === '') {
+    if (fallbackContent && fallbackContent.trim() !== '') {
+      return (
+        <div className='min-h-screen bg-gray-50'>
+          <div className='max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8'>
+            <div className='bg-white rounded-lg shadow-sm p-8'>
+              <Title heading={2} className='text-center mb-8'>
+                {title}
+              </Title>
+              <div className='prose prose-lg max-w-none'>
+                <MarkdownRenderer content={fallbackContent} />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className='flex justify-center items-center min-h-screen bg-gray-50'>
         <Empty
