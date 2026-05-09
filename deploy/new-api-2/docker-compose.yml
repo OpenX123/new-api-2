@@ -1,0 +1,34 @@
+networks:
+  1panel-network:
+    external: true
+
+services:
+  new-api:
+    command: --log-dir /app/logs
+    container_name: new-api-2
+    environment:
+      TZ: Asia/Shanghai
+      ERROR_LOG_ENABLED: "true"
+      MEMORY_CACHE_ENABLED: "true"
+      SQL_DSN: ${SQL_DSN:?SQL_DSN must be set in deploy/new-api-2/.env}
+    healthcheck:
+      interval: 30s
+      retries: 3
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://localhost:3000/api/status | grep -o '"success":\s*true' || exit 1
+      timeout: 10s
+    image: new-api:local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    labels:
+      createdBy: Apps
+    networks:
+      - 1panel-network
+    ports:
+      - "3001:3000"
+    restart: always
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs

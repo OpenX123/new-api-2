@@ -147,6 +147,38 @@ docker run --name new-api -d --restart always \
 
 </details>
 
+<details>
+<summary><strong>Local Build (this fork: <a href="https://github.com/OpenX123/new-api-2">OpenX123/new-api-2</a>)</strong></summary>
+
+This fork ships an opinionated dev deployment under [`deploy/new-api-2/`](./deploy/new-api-2/) that builds the image directly from the repository (no registry pull required).
+
+```bash
+# From the repository root
+cd deploy/new-api-2
+
+# One-time: provide the database DSN (file is gitignored)
+cp .env.example .env
+$EDITOR .env
+
+# Make sure the external network exists (one-time)
+docker network create 1panel-network
+
+# Build the image locally and start
+docker compose build
+docker compose up -d
+```
+
+Notes specific to this deployment file:
+
+- `image: new-api:local`, `build.context: ../..` — image is built from the current source tree.
+- Published on host port **3001** (`3001:3000`) to avoid collisions with anything already bound to 3000.
+- Joins the external `1panel-network` bridge; `SQL_DSN` is read from `deploy/new-api-2/.env` — never hard-code real credentials in `docker-compose.yml`.
+- Volumes `./data` and `./logs` are local to `deploy/new-api-2/` and excluded from version control.
+
+After it boots, visit `http://localhost:3001`. Container logs: `docker compose logs -f new-api`.
+
+</details>
+
 ---
 
 🎉 After deployment is complete, visit `http://localhost:3000` to start using!
