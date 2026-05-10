@@ -54,6 +54,9 @@ const (
 
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 
+	// ContextKeyRequireVision 标记当前请求体中包含图像内容，需要路由到支持视觉的渠道
+	ContextKeyRequireVision ContextKey = "require_vision"
+
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 
 	// ContextKeyFileSourcesToCleanup stores file sources that need cleanup when request ends

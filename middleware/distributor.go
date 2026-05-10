@@ -79,6 +79,11 @@ func Distribute() func(c *gin.Context) {
 					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
 					return
 				}
+				// 检测请求体是否包含图像，若是则只路由到支持视觉的渠道
+				if service.DetectVisionInRequest(c, c.Request.URL.Path) {
+					common.SetContextKey(c, constant.ContextKeyRequireVision, true)
+				}
+				requireVision := common.GetContextKeyBool(c, constant.ContextKeyRequireVision)
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 				// check path is /pg/chat/completions
@@ -102,12 +107,16 @@ func Distribute() func(c *gin.Context) {
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					if err == nil && preferred != nil {
+						// 含图请求若亲和缓存的渠道不支持视觉，跳过它走常规选择流程
+						preferredEligible := !requireVision || preferred.GetSetting().SupportsVision
 						if preferred.Status != common.ChannelStatusEnabled {
-						service.DeleteChannelAffinityCacheEntry(c)
+							service.DeleteChannelAffinityCacheEntry(c)
 							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 								abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 								return
 							}
+						} else if !preferredEligible {
+							// 亲和命中但不满足视觉要求 —— 不复用，让下方常规选择流程处理
 						} else if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
@@ -130,10 +139,11 @@ func Distribute() func(c *gin.Context) {
 
 				if channel == nil {
 					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
-						Ctx:        c,
-						ModelName:  modelRequest.Model,
-						TokenGroup: usingGroup,
-						Retry:      common.GetPointer(0),
+						Ctx:           c,
+						ModelName:     modelRequest.Model,
+						TokenGroup:    usingGroup,
+						Retry:         common.GetPointer(0),
+						RequireVision: requireVision,
 					})
 					if err != nil {
 						showGroup := usingGroup

@@ -196,6 +196,8 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    // 视觉/多模态能力声明：开启后含图请求会优先路由到该渠道
+    supports_vision: false,
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
@@ -853,6 +855,7 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.supports_vision = parsedSettings.supports_vision || false;
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -861,6 +864,7 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.supports_vision = false;
         }
       } else {
         data.force_format = false;
@@ -869,6 +873,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.supports_vision = false;
       }
 
       if (data.settings) {
@@ -2625,6 +2630,24 @@ const EditChannelModal = (props) => {
                       onChange={(value) => handleInputChange('type', value)}
                       disabled={isIonetLocked}
                     />
+
+                    <div className='pt-3'>
+                      <Text className='text-sm font-medium text-gray-500 mb-2 block'>
+                        {t('渠道能力')}
+                      </Text>
+                      <Form.Switch
+                        field='supports_vision'
+                        label={t('支持图片输入')}
+                        checkedText={t('开')}
+                        uncheckedText={t('关')}
+                        onChange={(value) =>
+                          handleChannelSettingsChange('supports_vision', value)
+                        }
+                        extraText={t(
+                          '开启后，含图片的请求会自动路由到该渠道；不开启时仅处理纯文本请求',
+                        )}
+                      />
+                    </div>
 
                     {inputs.type === 57 && (
                       <Banner

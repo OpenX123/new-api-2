@@ -7,6 +7,9 @@ type ChannelSettings struct {
 	PassThroughBodyEnabled bool   `json:"pass_through_body_enabled,omitempty"`
 	SystemPrompt           string `json:"system_prompt,omitempty"`
 	SystemPromptOverride   bool   `json:"system_prompt_override,omitempty"`
+	// SupportsVision 标记此渠道是否支持图像/多模态输入。
+	// 含图像内容的请求只会路由到 SupportsVision=true 的渠道。
+	SupportsVision bool `json:"supports_vision,omitempty"`
 }
 
 type VertexKeyType string

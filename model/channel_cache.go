@@ -98,10 +98,10 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, requireVision bool) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return GetChannel(group, model, retry, requireVision)
 	}
 
 	channelSyncLock.RLock()
@@ -118,6 +118,20 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 
 	if len(channels) == 0 {
 		return nil, nil
+	}
+
+	// 视觉过滤：含图请求只在 SupportsVision=true 的渠道中选择
+	if requireVision {
+		filtered := channels[:0:0] // new backing array, 不污染 cache
+		for _, id := range channels {
+			if ch, ok := channelsIDM[id]; ok && ch.GetSetting().SupportsVision {
+				filtered = append(filtered, id)
+			}
+		}
+		channels = filtered
+		if len(channels) == 0 {
+			return nil, nil
+		}
 	}
 
 	if len(channels) == 1 {

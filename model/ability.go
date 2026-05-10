@@ -103,7 +103,7 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int) (*Channel, error) {
+func GetChannel(group string, model string, retry int, requireVision bool) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
@@ -121,17 +121,23 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
-		// Filter out channels that have reached max concurrency
-		if ChannelConcurrencyChecker != nil {
+		// Filter out channels that have reached max concurrency or fail vision requirement.
+		// 视觉过滤与并发过滤合并到同一遍，避免重复 GetChannelById。
+		if ChannelConcurrencyChecker != nil || requireVision {
 			filtered := make([]Ability, 0, len(abilities))
 			for _, ability_ := range abilities {
 				ch, chErr := GetChannelById(ability_.ChannelId, false)
 				if chErr != nil {
 					continue
 				}
-				maxConc := ch.GetMaxConcurrency()
-				if maxConc > 0 && !ChannelConcurrencyChecker(ability_.ChannelId, maxConc) {
+				if requireVision && !ch.GetSetting().SupportsVision {
 					continue
+				}
+				if ChannelConcurrencyChecker != nil {
+					maxConc := ch.GetMaxConcurrency()
+					if maxConc > 0 && !ChannelConcurrencyChecker(ability_.ChannelId, maxConc) {
+						continue
+					}
 				}
 				filtered = append(filtered, ability_)
 			}
