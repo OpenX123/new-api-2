@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
@@ -381,12 +382,46 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	return targetConn, nil
 }
 
+// startPingKeepAlive 启动 SSE 保活 ping。
+//
+// 历史教训（与 stream_scanner.go 同源）：原实现里
+//   1) ctx 父链路用 context.Background()，客户端断开不会自动级联取消；
+//   2) 每次 ping tick 通过 sendPingData() 又起一个嵌套 goroutine 拿 mutex
+//      调 helper.PingData(c)，外层用 10s 超时等内层。一旦 mutex 被持锁过久，
+//      外层超时返回，内层 goroutine 就脱缰——它会等到 mutex 被释放后调用
+//      c.Writer.Write，写到一个被 gin 池化复用给下一请求的 c.Writer 上。
+//   3) 返回的 stopPinger 只是 cancel ctx，不等 goroutine 真正退出。
+//
+// 这就是 Claude 协议下 "我的对话里冒出别人的字" 的另一条逃逸路径。
+//
+// 新实现：
+//   - ctx 接 c.Request.Context()，客户端断开自动级联；
+//   - 单层 goroutine 同步加锁写 PingData；
+//   - 返回的 stop 函数会 cancel + 等 goroutine 退出（带 10s 兜底超时），
+//     再 atomic 翻转 handlerAlive，封禁 c.Writer。残留 goroutine 拿到锁后
+//     会 double-check alive，看到 false 立即拒写。
 func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) context.CancelFunc {
-	pingerCtx, stopPinger := context.WithCancel(context.Background())
+	pingerCtx, cancel := context.WithCancel(c.Request.Context())
 
+	if pingInterval <= 0 {
+		pingInterval = helper.DefaultPingInterval
+	}
+
+	var (
+		wg           sync.WaitGroup
+		pingMutex    sync.Mutex
+		handlerAlive atomic.Bool
+	)
+	handlerAlive.Store(true)
+
+	// goroutine 内的 logger 调用必须用 snapshot ctx，避免 c 被池化复用
+	// 后日志归因到陌生用户。
+	logCtx := context.WithValue(context.Background(), common2.RequestIdKey, c.Value(common2.RequestIdKey))
+
+	wg.Add(1)
 	gopool.Go(func() {
 		defer func() {
-			// 增加panic恢复处理
+			wg.Done()
 			if r := recover(); r != nil {
 				if common2.DebugEnabled {
 					println("SSE ping goroutine panic recovered:", fmt.Sprintf("%v", r))
@@ -397,46 +432,43 @@ func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) context.Canc
 			}
 		}()
 
-		if pingInterval <= 0 {
-			pingInterval = helper.DefaultPingInterval
-		}
-
 		ticker := time.NewTicker(pingInterval)
-		// 确保在任何情况下都清理ticker
-		defer func() {
-			ticker.Stop()
-			if common2.DebugEnabled {
-				println("SSE ping ticker stopped")
-			}
-		}()
+		defer ticker.Stop()
 
-		var pingMutex sync.Mutex
+		// 最大 ping 持续时间，防御 goroutine 无限运行
+		maxPingDuration := 120 * time.Minute
+		pingTimeout := time.NewTimer(maxPingDuration)
+		defer pingTimeout.Stop()
+
 		if common2.DebugEnabled {
 			println("SSE ping goroutine started")
 		}
 
-		// 增加超时控制，防止goroutine长时间运行
-		maxPingDuration := 120 * time.Minute // 最大ping持续时间
-		pingTimeout := time.NewTimer(maxPingDuration)
-		defer pingTimeout.Stop()
-
 		for {
 			select {
-			// 发送 ping 数据
 			case <-ticker.C:
-				if err := sendPingData(c, &pingMutex); err != nil {
-					if common2.DebugEnabled {
-						println("SSE ping error, stopping goroutine:", err.Error())
-					}
+				// 早期闸门：handler 已宣布退出，立刻返回，不再排队抢锁。
+				if !handlerAlive.Load() {
 					return
 				}
-			// 收到退出信号
+				pingMutex.Lock()
+				// 拿到锁后再 check 一次，防止从 Lock() 等待到现在的窗口里
+				// stopPinger 已经翻转 gate。
+				if !handlerAlive.Load() {
+					pingMutex.Unlock()
+					return
+				}
+				err := helper.PingData(c)
+				pingMutex.Unlock()
+				if err != nil {
+					logger.LogError(logCtx, "SSE ping error: "+err.Error())
+					return
+				}
+				if common2.DebugEnabled {
+					println("SSE ping data sent.")
+				}
 			case <-pingerCtx.Done():
 				return
-			// request 结束
-			case <-c.Request.Context().Done():
-				return
-			// 超时保护，防止goroutine无限运行
 			case <-pingTimeout.C:
 				if common2.DebugEnabled {
 					println("SSE ping goroutine timeout, stopping")
@@ -446,37 +478,29 @@ func startPingKeepAlive(c *gin.Context, pingInterval time.Duration) context.Canc
 		}
 	})
 
-	return stopPinger
-}
+	// 返回的 stop 函数：cancel + 等 goroutine 退出 + 翻转 alive gate。
+	// 调用者必须在 c.Writer 即将被 gin 回收前调用（即所有依赖 c 的写操作之后）。
+	//
+	// 注意：alive 翻转**不**在 mutex 内做。pingMutex 是 ping 内部的锁，
+	// 没有死锁风险；但保持和 stream_scanner.go 一致的"原子翻转 + double-check"
+	// 模式更简单可读。goroutine 拿到锁后会 double-check alive；atomic 语义
+	// 保证翻转 happens-before goroutine 的 Load。
+	return func() {
+		cancel()
 
-func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
-	// 增加超时控制，防止锁死等待
-	done := make(chan error, 1)
-	go func() {
-		mutex.Lock()
-		defer mutex.Unlock()
-
-		err := helper.PingData(c)
-		if err != nil {
-			logger.LogError(c, "SSE ping error: "+err.Error())
-			done <- err
-			return
+		// 给 goroutine 一个优雅退出窗口；超时后强行翻转 alive gate。
+		done := make(chan struct{})
+		gopool.Go(func() {
+			wg.Wait()
+			close(done)
+		})
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			logger.LogError(logCtx, "SSE ping goroutine failed to exit; sealing writer")
 		}
 
-		if common2.DebugEnabled {
-			println("SSE ping data sent.")
-		}
-		done <- nil
-	}()
-
-	// 设置发送ping数据的超时时间
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(10 * time.Second):
-		return errors.New("SSE ping data send timeout")
-	case <-c.Request.Context().Done():
-		return errors.New("request context cancelled during ping")
+		handlerAlive.Store(false)
 	}
 }
 

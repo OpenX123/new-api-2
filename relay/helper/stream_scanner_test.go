@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -627,6 +628,179 @@ func TestStreamScannerHandler_StreamStatus_PreInitialized(t *testing.T) {
 
 	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
 	assert.Equal(t, 1, info.StreamStatus.TotalErrorCount())
+}
+
+// ---------- Cross-request leak guard ----------
+//
+// Reproduces the bug where the nested ping goroutine (spawned inside the
+// outer ping goroutine to apply a 10s write timeout) outlives the parent
+// handler. After the parent returns, gin recycles *gin.Context, and the
+// orphaned ping goroutine writes ": PING\n\n" into c.Writer — which has
+// been re-bound to the next request's response. Symptom: "我的对话里冒出别人的字".
+//
+// Reproduction strategy here (without relying on gin's pool reuse, which is
+// non-deterministic in tests): wrap c.Writer with a sealableWriter. Force
+// the parent handler to return while the nested ping goroutine is still
+// blocked on writeMutex (held by a long-running dataHandler). After the
+// parent returns, Seal() the writer; release the mutex; observe whether the
+// orphan ping writes through.
+//
+// On the buggy code: the nested goroutine wakes up after the parent has
+// returned and writes through Seal() — leak detected.
+// On the fixed code: the alive-gate inside the mutex prevents post-return
+// writes — no leak.
+
+type sealableWriter struct {
+	gin.ResponseWriter
+	mu             sync.Mutex
+	sealed         bool
+	postSealWrites [][]byte
+}
+
+func (w *sealableWriter) Seal() {
+	w.mu.Lock()
+	w.sealed = true
+	w.mu.Unlock()
+}
+
+func (w *sealableWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	if w.sealed {
+		cp := make([]byte, len(p))
+		copy(cp, p)
+		w.postSealWrites = append(w.postSealWrites, cp)
+	}
+	w.mu.Unlock()
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *sealableWriter) WriteString(s string) (int, error) {
+	return w.Write([]byte(s))
+}
+
+func (w *sealableWriter) PostSealWrites() [][]byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make([][]byte, len(w.postSealWrites))
+	copy(out, w.postSealWrites)
+	return out
+}
+
+func TestStreamScannerHandler_NoOrphanWritesAfterReturn(t *testing.T) {
+	// Not parallel: tweaks ping settings + global StreamingTimeout.
+
+	setting := operation_setting.GetGeneralSetting()
+	oldEnabled := setting.PingIntervalEnabled
+	oldSeconds := setting.PingIntervalSeconds
+	setting.PingIntervalEnabled = true
+	setting.PingIntervalSeconds = 1 // PingIntervalSeconds is int seconds; 1s is the minimum
+	t.Cleanup(func() {
+		setting.PingIntervalEnabled = oldEnabled
+		setting.PingIntervalSeconds = oldSeconds
+	})
+
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	// Wrap c.Writer so we can detect any Write that happens after Seal().
+	sw := &sealableWriter{ResponseWriter: c.Writer}
+	c.Writer = sw
+
+	// Cancellable request context: simulates client disconnect.
+	reqCtx, cancelReq := context.WithCancel(context.Background())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(reqCtx)
+
+	// Upstream that emits one chunk to wake dataHandler, then blocks forever.
+	pr, pw := io.Pipe()
+	go func() {
+		fmt.Fprint(pw, "data: trigger\n")
+		// Hold the pipe open; never write more, never close.
+		select {}
+	}()
+
+	resp := &http.Response{Body: pr}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	// dataHandler enters and holds the mutex (writeMutex) until released.
+	// While it holds the mutex, any ping goroutine trying to PingData(c)
+	// will be parked on writeMutex.Lock().
+	handlerEntered := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	var entered atomic.Bool
+	dataHandler := func(data string, sr *StreamResult) {
+		// dataHandler is invoked by stream_scanner.go inside writeMutex.Lock(),
+		// so blocking here means the mutex is held the whole time.
+		if entered.CompareAndSwap(false, true) {
+			close(handlerEntered)
+		}
+		<-releaseHandler
+	}
+
+	handlerDone := make(chan struct{})
+	go func() {
+		defer close(handlerDone)
+		StreamScannerHandler(c, resp, info, dataHandler)
+	}()
+
+	// Wait for dataHandler to enter (mutex now held).
+	select {
+	case <-handlerEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("dataHandler never entered; cannot proceed")
+	}
+
+	// Give the ping ticker enough time to fire at least once.
+	// With ping interval = 1s, 2s ensures at least one ping attempt that
+	// gets parked on writeMutex.Lock() inside the nested goroutine.
+	time.Sleep(2200 * time.Millisecond)
+
+	// Cancel the request context: this signals the OUTER ping goroutine to
+	// return via <-ctx.Done(). The NESTED ping goroutine on buggy code has
+	// no such cancellation path — it remains parked on writeMutex.Lock().
+	cancelReq()
+
+	// Wait for the parent handler to return. On the buggy code, the parent
+	// will hit the 5s wg.Wait timeout and return while the nested goroutine
+	// is still parked. On the fixed code, the parent waits cleanly.
+	select {
+	case <-handlerDone:
+	case <-time.After(15 * time.Second):
+		// The fixed code may also wait fully if the nested goroutine is
+		// flattened away. We release the handler below to unblock either case.
+	}
+
+	// Mark the writer as sealed: any write from this point on is a leak.
+	sw.Seal()
+
+	// Now release the mutex by letting dataHandler return. The nested ping
+	// goroutine (if it still exists) will acquire the mutex and call
+	// PingData(c) — which writes ": PING\n\n" into c.Writer.
+	close(releaseHandler)
+
+	// Ensure the parent handler has fully returned (in case it was still
+	// inside wg.Wait when we sealed).
+	select {
+	case <-handlerDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("handler did not return after releasing dataHandler")
+	}
+
+	// Give any orphan goroutine a chance to drain its write.
+	time.Sleep(500 * time.Millisecond)
+
+	leaks := sw.PostSealWrites()
+	if len(leaks) > 0 {
+		var preview []string
+		for _, b := range leaks {
+			preview = append(preview, fmt.Sprintf("%q", string(b)))
+		}
+		t.Fatalf("detected %d orphan write(s) after handler return: %s",
+			len(leaks), strings.Join(preview, ", "))
+	}
 }
 
 func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
