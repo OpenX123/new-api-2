@@ -502,6 +502,7 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
+    supports_vision: false,
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
@@ -983,6 +984,7 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        supports_vision: data.supports_vision || false,
       });
       initialModelsRef.current = (data.models || [])
         .map((model) => (model || '').trim())
@@ -1372,6 +1374,7 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: false,
       system_prompt: '',
       system_prompt_override: false,
+      supports_vision: false,
     });
     // 重置密钥模式状态
     setKeyMode('append');
@@ -1742,6 +1745,7 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      supports_vision: localInputs.supports_vision || false,
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
@@ -1823,6 +1827,7 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.supports_vision;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
