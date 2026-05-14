@@ -105,7 +105,7 @@ func Distribute() func(c *gin.Context) {
 						if preferred.Status != common.ChannelStatusEnabled {
 						service.DeleteChannelAffinityCacheEntry(c)
 							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-								abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorChannelDisabled))
+								abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorAffinityChannelDisabled))
 								return
 							}
 						} else if usingGroup == "auto" {
