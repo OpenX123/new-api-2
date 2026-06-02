@@ -62,6 +62,11 @@ export async function patchPlanStatus(
   return res.data
 }
 
+export async function deletePlan(id: number): Promise<ApiResponse> {
+  const res = await api.delete(`/api/subscription/admin/plans/${id}`)
+  return res.data
+}
+
 // ============================================================================
 // Admin User Subscription Management
 // ============================================================================
@@ -145,7 +150,10 @@ export async function createWaffoPancakeSubscriptionProduct(data: {
 }
 
 // Returns the OnetimeProducts in the saved Pancake store; empty when the
-// gateway isn't fully configured.
+// gateway isn't fully configured. Endpoint is RootAuth and the drawer
+// auto-loads it on open, so non-root admins would see a global "权限不足"
+// toast for a best-effort fetch — silence business errors here; caller
+// already falls back to an empty list.
 export async function listWaffoPancakeSubscriptionProductOptions(): Promise<
   ApiResponse<{
     store_id: string
@@ -153,7 +161,12 @@ export async function listWaffoPancakeSubscriptionProductOptions(): Promise<
   }>
 > {
   const res = await api.post(
-    '/api/option/waffo-pancake/subscription-product-options'
+    '/api/option/waffo-pancake/subscription-product-options',
+    undefined,
+    { skipBusinessError: true, skipErrorHandler: true } as Record<
+      string,
+      unknown
+    >
   )
   return res.data
 }

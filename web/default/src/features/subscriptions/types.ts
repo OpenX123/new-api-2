@@ -128,4 +128,8 @@ export interface SelfSubscriptionData {
 // Dialog Types
 // ============================================================================
 
-export type SubscriptionsDialogType = 'create' | 'update' | 'toggle-status'
+export type SubscriptionsDialogType =
+  | 'create'
+  | 'update'
+  | 'toggle-status'
+  | 'delete'

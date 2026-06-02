@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -262,6 +263,38 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.InvalidateSubscriptionPlanCache(id)
+	common.ApiSuccess(c, nil)
+}
+
+func AdminDeleteSubscriptionPlan(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
+		return
+	}
+
+	now := common.GetTimestamp()
+	var activeCount int64
+	if err := model.DB.Model(&model.UserSubscription{}).
+		Where("plan_id = ? AND status = ? AND end_time > ?", id, "active", now).
+		Count(&activeCount).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if activeCount > 0 {
+		common.ApiErrorMsg(c, fmt.Sprintf("还有 %d 个活跃订阅,不能删除", activeCount))
+		return
+	}
+
+	if err := model.DB.Delete(&model.SubscriptionPlan{}, id).Error; err != nil {
 		common.ApiError(c, err)
 		return
 	}
