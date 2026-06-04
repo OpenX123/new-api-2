@@ -20,7 +20,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getEnabledModels } from '@/features/channels/api'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -197,7 +198,12 @@ const groupSchema = z.object({
 
 type ModelFormValues = z.infer<typeof modelSchema>
 type GroupFormValues = z.infer<typeof groupSchema>
-type RatioTabId = 'models' | 'groups' | 'tool-prices' | 'upstream-sync'
+type RatioTabId =
+  | 'models'
+  | 'unset-models'
+  | 'groups'
+  | 'tool-prices'
+  | 'upstream-sync'
 
 type RatioSettingsCardProps = {
   modelDefaults: ModelFormValues
@@ -212,12 +218,27 @@ export function RatioSettingsCard({
   groupDefaults,
   toolPricesDefault,
   titleKey = 'Pricing Ratios',
-  visibleTabs = ['models', 'groups', 'tool-prices', 'upstream-sync'],
+  visibleTabs = [
+    'models',
+    'unset-models',
+    'groups',
+    'tool-prices',
+    'upstream-sync',
+  ],
 }: RatioSettingsCardProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const queryClient = useQueryClient()
   const [confirmOpen, setConfirmOpen] = useState(false)
+
+  const showUnsetTab = visibleTabs.includes('unset-models')
+  const enabledModelsQuery = useQuery({
+    queryKey: ['channel-enabled-models'],
+    queryFn: getEnabledModels,
+    enabled: showUnsetTab,
+    staleTime: 60_000,
+  })
+  const enabledModelNames = enabledModelsQuery.data?.data ?? []
 
   const resetMutation = useMutation({
     mutationFn: resetModelRatios,
@@ -444,6 +465,7 @@ export function RatioSettingsCard({
 
   const tabLabels: Record<RatioTabId, string> = {
     models: 'Model prices',
+    'unset-models': 'Unset models',
     groups: 'Group ratios',
     'tool-prices': 'Tool prices',
     'upstream-sync': 'Upstream price sync',
@@ -454,7 +476,8 @@ export function RatioSettingsCard({
       2: 'grid-cols-2',
       3: 'grid-cols-3',
       4: 'grid-cols-4',
-    }[visibleTabs.length] ?? 'grid-cols-4'
+      5: 'grid-cols-5',
+    }[visibleTabs.length] ?? 'grid-cols-5'
   const defaultTab = visibleTabs[0] ?? 'models'
 
   const renderTabContent = (tab: RatioTabId) => {
@@ -466,6 +489,24 @@ export function RatioSettingsCard({
           onReset={handleResetRatios}
           isSaving={updateOption.isPending}
           isResetting={resetMutation.isPending}
+        />
+      )
+    }
+    if (tab === 'unset-models') {
+      return (
+        <ModelRatioForm
+          form={modelForm}
+          onSave={saveModelRatios}
+          onReset={handleResetRatios}
+          isSaving={updateOption.isPending}
+          isResetting={resetMutation.isPending}
+          candidateModelNames={enabledModelNames}
+          filterMode='unset'
+          showJsonToggle={false}
+          showReset={false}
+          headerNote={t(
+            'Only enabled models without a base price or ratio are shown. Configured models drop off automatically after save.'
+          )}
         />
       )
     }

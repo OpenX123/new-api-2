@@ -60,6 +60,11 @@ type ModelRatioFormProps = {
   onReset: () => void
   isSaving: boolean
   isResetting: boolean
+  candidateModelNames?: string[]
+  filterMode?: 'all' | 'unset'
+  showJsonToggle?: boolean
+  showReset?: boolean
+  headerNote?: string
 }
 
 export const ModelRatioForm = memo(function ModelRatioForm({
@@ -68,6 +73,11 @@ export const ModelRatioForm = memo(function ModelRatioForm({
   onReset,
   isSaving,
   isResetting,
+  candidateModelNames,
+  filterMode = 'all',
+  showJsonToggle = true,
+  showReset = true,
+  headerNote,
 }: ModelRatioFormProps) {
   const { t } = useTranslation()
   const [editMode, setEditMode] = useState<'visual' | 'json'>('visual')
@@ -88,33 +98,44 @@ export const ModelRatioForm = memo(function ModelRatioForm({
 
   return (
     <div className='space-y-6'>
-      <div className='flex justify-end'>
-        <Button variant='outline' size='sm' onClick={toggleEditMode}>
-          {editMode === 'visual' ? (
-            <>
-              <Code2 className='mr-2 h-4 w-4' />
-              {t('Switch to JSON')}
-            </>
+      {(headerNote || showJsonToggle) && (
+        <div className='flex items-center justify-between gap-4'>
+          {headerNote ? (
+            <p className='text-muted-foreground text-sm'>{headerNote}</p>
           ) : (
-            <>
-              <Eye className='mr-2 h-4 w-4' />
-              {t('Switch to Visual')}
-            </>
+            <span />
           )}
-        </Button>
-      </div>
+          {showJsonToggle && (
+            <Button variant='outline' size='sm' onClick={toggleEditMode}>
+              {editMode === 'visual' ? (
+                <>
+                  <Code2 className='mr-2 h-4 w-4' />
+                  {t('Switch to JSON')}
+                </>
+              ) : (
+                <>
+                  <Eye className='mr-2 h-4 w-4' />
+                  {t('Switch to Visual')}
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      )}
 
       <Form {...form}>
         <SettingsPageActionsPortal>
-          <Button
-            type='button'
-            variant='destructive'
-            size='sm'
-            onClick={onReset}
-            disabled={isResetting}
-          >
-            {t('Reset prices')}
-          </Button>
+          {showReset && (
+            <Button
+              type='button'
+              variant='destructive'
+              size='sm'
+              onClick={onReset}
+              disabled={isResetting}
+            >
+              {t('Reset prices')}
+            </Button>
+          )}
           <Button
             type='button'
             size='sm'
@@ -137,6 +158,8 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               audioCompletionRatio={form.watch('AudioCompletionRatio')}
               billingMode={form.watch('BillingMode')}
               billingExpr={form.watch('BillingExpr')}
+              candidateModelNames={candidateModelNames}
+              filterMode={filterMode}
               onChange={(field, value) => {
                 const fieldMap: Record<string, keyof ModelFormValues> = {
                   'billing_setting.billing_mode': 'BillingMode',
@@ -148,28 +171,30 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               }}
             />
 
-            <FormField
-              control={form.control}
-              name='ExposeRatioEnabled'
-              render={({ field }) => (
-                <SettingsSwitchItem>
-                  <SettingsSwitchContent>
-                    <FormLabel>{t('Expose ratio API')}</FormLabel>
-                    <FormDescription>
-                      {t(
-                        'Allow clients to query configured ratios via `/api/ratio`.'
-                      )}
-                    </FormDescription>
-                  </SettingsSwitchContent>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </SettingsSwitchItem>
-              )}
-            />
+            {filterMode !== 'unset' && (
+              <FormField
+                control={form.control}
+                name='ExposeRatioEnabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Expose ratio API')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Allow clients to query configured ratios via `/api/ratio`.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+            )}
           </div>
         ) : (
           <SettingsForm onSubmit={form.handleSubmit(onSave)}>

@@ -79,6 +79,8 @@ type ModelRatioVisualEditorProps = {
   billingMode: string
   billingExpr: string
   onChange: (field: string, value: string) => void
+  candidateModelNames?: string[]
+  filterMode?: 'all' | 'unset'
 }
 
 type ModelRow = {
@@ -205,6 +207,8 @@ export const ModelRatioVisualEditor = memo(
     billingMode,
     billingExpr,
     onChange,
+    candidateModelNames,
+    filterMode = 'all',
   }: ModelRatioVisualEditorProps) {
     const { t } = useTranslation()
     const isMobile = useMediaQuery('(max-width: 767px)')
@@ -307,6 +311,7 @@ export const ModelRatioVisualEditor = memo(
       )
 
       const modelNames = new Set([
+        ...(candidateModelNames ?? []),
         ...Object.keys(priceMap),
         ...Object.keys(ratioMap),
         ...Object.keys(cacheMap),
@@ -377,7 +382,16 @@ export const ModelRatioVisualEditor = memo(
         }
       })
 
-      return modelData.sort((a, b) => a.name.localeCompare(b.name))
+      const sorted = modelData.sort((a, b) => a.name.localeCompare(b.name))
+      if (filterMode === 'unset') {
+        return sorted.filter(
+          (row) =>
+            row.billingMode !== 'tiered_expr' &&
+            !hasValue(row.price) &&
+            !hasValue(row.ratio)
+        )
+      }
+      return sorted
     }, [
       modelPrice,
       modelRatio,
@@ -389,6 +403,8 @@ export const ModelRatioVisualEditor = memo(
       audioCompletionRatio,
       billingMode,
       billingExpr,
+      candidateModelNames,
+      filterMode,
     ])
 
     const modeCounts = useMemo(
@@ -1042,7 +1058,9 @@ export const ModelRatioVisualEditor = memo(
       prevProps.audioCompletionRatio === nextProps.audioCompletionRatio &&
       prevProps.billingMode === nextProps.billingMode &&
       prevProps.billingExpr === nextProps.billingExpr &&
-      prevProps.onChange === nextProps.onChange
+      prevProps.onChange === nextProps.onChange &&
+      prevProps.candidateModelNames === nextProps.candidateModelNames &&
+      prevProps.filterMode === nextProps.filterMode
     )
   }
 )
