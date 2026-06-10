@@ -1,7 +1,6 @@
 package ollama
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -398,7 +397,7 @@ func PullOllamaModelStream(baseURL, apiKey, modelName string, progressCallback f
 	}
 
 	// 读取流式响应
-	scanner := bufio.NewScanner(response.Body)
+	scanner := helper.NewStreamScanner(response.Body)
 	successful := false
 	for scanner.Scan() {
 		line := scanner.Text()
