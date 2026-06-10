@@ -119,6 +119,13 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		request.Thinking = nil
 	}
 
+	// clear_thinking_20251015 仅在 thinking 为 enabled/adaptive 时合法,
+	// thinking 被剥离(或客户端本就未开启)后必须同步移除该 edit,否则 Anthropic 返回
+	// "clear_thinking_20251015 strategy requires thinking to be enabled or adaptive" 400。
+	if request.Thinking == nil || request.Thinking.Type == "disabled" {
+		request.ContextManagement = removeClearThinkingEdits(request.ContextManagement)
+	}
+
 	// Convert 'developer' role messages to system content, as Claude API only supports 'user' and 'assistant' roles
 	{
 		var filteredMessages []dto.ClaudeMessage
@@ -264,6 +271,57 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 // 若任何一条 assistant 消息含 tool_use 但缺少 thinking,则不应向上游开启 extended thinking,
 // 否则 Anthropic 会以 "thinking is enabled but reasoning_content is missing ..." 拒绝。
 // 当历史中没有 assistant tool_use 时,默认允许开启。
+// removeClearThinkingEdits 从 context_management.edits 中移除 clear_thinking_* 策略。
+// 其余 edit(如 clear_tool_uses_*)原样保留;若移除后 edits 为空且无其他字段,整个
+// context_management 一并去掉。解析失败时原样透传,交由上游校验。
+func removeClearThinkingEdits(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var cm map[string]json.RawMessage
+	if err := common.Unmarshal(raw, &cm); err != nil {
+		return raw
+	}
+	editsRaw, ok := cm["edits"]
+	if !ok {
+		return raw
+	}
+	var edits []json.RawMessage
+	if err := common.Unmarshal(editsRaw, &edits); err != nil {
+		return raw
+	}
+	filtered := make([]json.RawMessage, 0, len(edits))
+	for _, edit := range edits {
+		var meta struct {
+			Type string `json:"type"`
+		}
+		if err := common.Unmarshal(edit, &meta); err == nil && strings.HasPrefix(meta.Type, "clear_thinking") {
+			continue
+		}
+		filtered = append(filtered, edit)
+	}
+	if len(filtered) == len(edits) {
+		return raw
+	}
+	if len(filtered) == 0 {
+		delete(cm, "edits")
+		if len(cm) == 0 {
+			return nil
+		}
+	} else {
+		newEdits, err := common.Marshal(filtered)
+		if err != nil {
+			return raw
+		}
+		cm["edits"] = newEdits
+	}
+	out, err := common.Marshal(cm)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
 func claudeHistorySupportsThinking(messages []dto.ClaudeMessage) bool {
 	for _, msg := range messages {
 		if msg.Role != "assistant" {
