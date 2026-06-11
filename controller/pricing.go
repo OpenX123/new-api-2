@@ -4,6 +4,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -55,13 +56,19 @@ func GetPricing(c *gin.Context) {
 		}
 	}
 
-	usableGroup = service.GetUserUsableGroups(group)
-	pricing = filterPricingByUsableGroups(pricing, usableGroup)
-	// check groupRatio contains usableGroup
-	for group := range ratio_setting.GetGroupRatioCopy() {
-		if _, ok := usableGroup[group]; !ok {
-			delete(groupRatio, group)
+	// 模型广场展示全部模型与分组(展示与可用解耦):不再按用户可用分组过滤,
+	// 令牌可选分组仍由 /api/user/self/groups (GetUserGroups) 单独控制。
+	usableGroup = map[string]string{}
+	for g := range ratio_setting.GetGroupRatioCopy() {
+		desc := setting.GetUsableGroupDescription(g)
+		if desc == "" {
+			desc = g
 		}
+		usableGroup[g] = desc
+	}
+	// 用户真实可用分组的描述优先(含特殊可用分组与自身分组)
+	for g, desc := range service.GetUserUsableGroups(group) {
+		usableGroup[g] = desc
 	}
 
 	c.JSON(200, gin.H{
