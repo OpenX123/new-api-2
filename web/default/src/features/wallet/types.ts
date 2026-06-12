@@ -287,3 +287,110 @@ export interface BillingHistoryResponse {
 export interface CompleteOrderRequest {
   trade_no: string
 }
+
+// ============================================================================
+// Invoice Types
+// ============================================================================
+
+/**
+ * An order that is eligible for invoicing
+ */
+export interface InvoiceableOrder {
+  /** Order type: topup (充值) or subscription (订阅) */
+  order_type: 'topup' | 'subscription'
+  /** Internal order ID */
+  order_id: number
+  /** Trade/payment number */
+  trade_no: string
+  /** Payment amount in currency units */
+  money: number
+  /** Creation timestamp in seconds */
+  create_time: number
+}
+
+/**
+ * Saved invoice title (default header)
+ */
+export interface InvoiceTitle {
+  /** 1 = Personal, 2 = Company */
+  title_type: 1 | 2
+  /** Invoice title / company name */
+  title_name: string
+  /** Tax number (required for company) */
+  tax_no: string
+  /** Recipient email */
+  email: string
+}
+
+/**
+ * Invoice record from the server
+ */
+export interface InvoiceRecord {
+  /** Record ID */
+  id: number
+  /** Invoice number */
+  invoice_no: string
+  /** 1 = Personal, 2 = Company */
+  title_type: 1 | 2
+  /** Invoice title name */
+  title_name: string
+  /** Tax number */
+  tax_no: string
+  /** Recipient email */
+  email: string
+  /** Invoice amount */
+  money: number
+  /** Status: 1 = Pending, 2 = Invoiced, 3 = Rejected */
+  status: 1 | 2 | 3
+  /** Rejection reason (when status = 3) */
+  reject_reason: string
+  /** Optional remark */
+  remark: string
+  /** Creation timestamp in seconds */
+  create_time: number
+  /** Completion timestamp in seconds */
+  complete_time: number
+  /** Whether an invoice file is available */
+  has_file: boolean
+}
+
+/**
+ * Create invoice request body
+ */
+export interface CreateInvoiceRequest {
+  /** Order keys to include in this invoice */
+  order_keys: Array<{ type: string; id: number }>
+  /** 1 = Personal, 2 = Company */
+  title_type: 1 | 2
+  /** Invoice title / company name */
+  title_name: string
+  /** Tax number */
+  tax_no: string
+  /** Recipient email */
+  email: string
+  /** Optional remark */
+  remark: string
+  /** Whether to save this as the default title */
+  save_as_default: boolean
+}
+
+/**
+ * Response type for invoiceable orders endpoint
+ */
+export type InvoiceableOrdersResponse = ApiResponse<{
+  orders: InvoiceableOrder[]
+  default_title: InvoiceTitle | null
+}>
+
+/**
+ * Response type for invoice list endpoint
+ */
+export type InvoiceListResponse = ApiResponse<{
+  items: InvoiceRecord[]
+  total: number
+}>
+
+/**
+ * Response type for create invoice endpoint
+ */
+export type CreateInvoiceResponse = ApiResponse<InvoiceRecord>

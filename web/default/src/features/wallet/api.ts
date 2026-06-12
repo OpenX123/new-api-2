@@ -38,6 +38,10 @@ import type {
   WaffoPaymentResponse,
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
+  InvoiceableOrdersResponse,
+  InvoiceListResponse,
+  CreateInvoiceResponse,
+  CreateInvoiceRequest,
 } from './types'
 
 // ============================================================================
@@ -232,4 +236,69 @@ export async function completeOrder(
 ): Promise<ApiResponse> {
   const res = await api.post('/api/user/topup/complete', request)
   return res.data
+}
+
+// ============================================================================
+// Invoice API Functions
+// ============================================================================
+
+/**
+ * Get invoiceable orders and default title for the current user
+ */
+export async function getInvoiceableOrders(): Promise<InvoiceableOrdersResponse> {
+  const res = await api.get('/api/user/invoice/orders')
+  return res.data
+}
+
+/**
+ * Get invoice records for the current user (paginated)
+ */
+export async function getMyInvoices(
+  p: number,
+  pageSize: number
+): Promise<InvoiceListResponse> {
+  const params = new URLSearchParams({
+    p: p.toString(),
+    page_size: pageSize.toString(),
+  })
+  const res = await api.get(`/api/user/invoice/self?${params.toString()}`)
+  return res.data
+}
+
+/**
+ * Create a new invoice application
+ */
+export async function createInvoice(
+  payload: CreateInvoiceRequest
+): Promise<CreateInvoiceResponse> {
+  const res = await api.post('/api/user/invoice', payload)
+  return res.data
+}
+
+/**
+ * Cancel (delete) a pending invoice application
+ */
+export async function cancelInvoice(id: number): Promise<ApiResponse> {
+  const res = await api.delete(`/api/user/invoice/${id}`)
+  return res.data
+}
+
+/**
+ * Download the invoice file for a completed invoice
+ */
+export async function downloadInvoiceFile(
+  id: number,
+  invoiceNo: string
+): Promise<void> {
+  const res = await api.get(`/api/user/invoice/${id}/file`, {
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(res.data as Blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `invoice-${invoiceNo}.pdf`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
