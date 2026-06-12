@@ -28,6 +28,7 @@ var (
 	ErrInvoiceStatusInvalid = errors.New("发票申请状态不允许此操作")
 	ErrInvoiceOrderOccupied = errors.New("所选订单已在其他开票申请中")
 	ErrInvoiceNoOrders      = errors.New("未选择任何订单")
+	ErrInvoiceFileNotFound  = errors.New("发票文件不存在")
 )
 
 type Invoice struct {
@@ -117,6 +118,196 @@ func CreateInvoiceWithOrders(invoice *Invoice, orders []*InvoiceOrder) error {
 		return err
 	}
 	return nil
+}
+
+func GetInvoiceById(id int) (*Invoice, error) {
+	var inv Invoice
+	if err := DB.First(&inv, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvoiceNotFound
+		}
+		return nil, err
+	}
+	var orders []*InvoiceOrder
+	if err := DB.Where("invoice_id = ?", id).Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	inv.Orders = orders
+	var fileCnt int64
+	if err := DB.Model(&InvoiceFile{}).Where("invoice_id = ?", id).Count(&fileCnt).Error; err != nil {
+		return nil, err
+	}
+	inv.HasFile = fileCnt > 0
+	return &inv, nil
+}
+
+// CancelInvoice 用户撤销：仅本人、仅待开票；物理删除申请与关联（释放订单）
+func CancelInvoice(id int, userId int) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var inv Invoice
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&inv, "id = ? AND user_id = ?", id, userId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInvoiceNotFound
+			}
+			return err
+		}
+		if inv.Status != InvoiceStatusPending {
+			return ErrInvoiceStatusInvalid
+		}
+		if err := tx.Where("invoice_id = ?", id).Delete(&InvoiceOrder{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&Invoice{}, id).Error
+	})
+}
+
+// RejectInvoice 管理员驳回：仅待开票；释放订单、记录原因
+func RejectInvoice(id int, reason string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var inv Invoice
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&inv, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInvoiceNotFound
+			}
+			return err
+		}
+		if inv.Status != InvoiceStatusPending {
+			return ErrInvoiceStatusInvalid
+		}
+		if err := tx.Where("invoice_id = ?", id).Delete(&InvoiceOrder{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&Invoice{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"status":        InvoiceStatusRejected,
+			"reject_reason": reason,
+			"complete_time": common.GetTimestamp(),
+		}).Error
+	})
+}
+
+// CompleteInvoiceWithFile 管理员上传发票：待开票→已开票；已开票可重新上传（覆盖文件）
+func CompleteInvoiceWithFile(id int, filename string, mimeType string, data []byte) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var inv Invoice
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&inv, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInvoiceNotFound
+			}
+			return err
+		}
+		if inv.Status != InvoiceStatusPending && inv.Status != InvoiceStatusCompleted {
+			return ErrInvoiceStatusInvalid
+		}
+		if err := tx.Where("invoice_id = ?", id).Delete(&InvoiceFile{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&InvoiceFile{InvoiceId: id, Filename: filename, MimeType: mimeType,
+			Size: int64(len(data)), Data: data, UploadTime: common.GetTimestamp()}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&Invoice{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"status":        InvoiceStatusCompleted,
+			"complete_time": common.GetTimestamp(),
+		}).Error
+	})
+}
+
+func GetInvoiceFile(invoiceId int) (*InvoiceFile, error) {
+	var f InvoiceFile
+	if err := DB.First(&f, "invoice_id = ?", invoiceId).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInvoiceFileNotFound
+		}
+		return nil, err
+	}
+	return &f, nil
+}
+
+func GetUserInvoices(userId int, pageInfo *common.PageInfo) ([]*Invoice, int64, error) {
+	var list []*Invoice
+	var total int64
+	q := DB.Model(&Invoice{}).Where("user_id = ?", userId)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := q.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&list).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	fillInvoiceHasFile(list)
+	return list, total, nil
+}
+
+// GetAllInvoices 管理端列表；status=0 表示全部；keyword 匹配申请单号/抬头
+func GetAllInvoices(keyword string, status int, pageInfo *common.PageInfo) ([]*Invoice, int64, error) {
+	var list []*Invoice
+	var total int64
+	q := DB.Model(&Invoice{})
+	if status != 0 {
+		q = q.Where("status = ?", status)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		q = q.Where("invoice_no LIKE ? OR title_name LIKE ?", like, like)
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	// 待开票置顶，其余按 id 倒序
+	err := q.Order("status asc").Order("id desc").
+		Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&list).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	fillInvoiceUsernames(list)
+	fillInvoiceHasFile(list)
+	return list, total, nil
+}
+
+func fillInvoiceUsernames(list []*Invoice) {
+	if len(list) == 0 {
+		return
+	}
+	idSet := make(map[int]bool)
+	for _, inv := range list {
+		idSet[inv.UserId] = true
+	}
+	ids := make([]int, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	var users []*User
+	if err := DB.Select("id, username").Where("id IN ?", ids).Find(&users).Error; err != nil {
+		return
+	}
+	nameMap := make(map[int]string, len(users))
+	for _, u := range users {
+		nameMap[u.Id] = u.Username
+	}
+	for _, inv := range list {
+		inv.Username = nameMap[inv.UserId]
+	}
+}
+
+func fillInvoiceHasFile(list []*Invoice) {
+	if len(list) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(list))
+	for _, inv := range list {
+		ids = append(ids, inv.Id)
+	}
+	var files []*InvoiceFile
+	if err := DB.Select("invoice_id").Where("invoice_id IN ?", ids).Find(&files).Error; err != nil {
+		return
+	}
+	fset := make(map[int]bool, len(files))
+	for _, f := range files {
+		fset[f.InvoiceId] = true
+	}
+	for _, inv := range list {
+		inv.HasFile = fset[inv.Id]
+	}
 }
 
 // GetInvoiceableOrders 用户可开票订单：支付成功、金额>0、未被任何申请占用

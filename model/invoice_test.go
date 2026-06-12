@@ -101,3 +101,99 @@ func TestGetInvoiceableOrders(t *testing.T) {
 	require.True(t, keys["topup2"])
 	require.True(t, keys["subscription9"])
 }
+
+func mustCreateInvoice(t *testing.T, userId int, orderId int) *Invoice {
+	t.Helper()
+	seedSuccessTopup(t, orderId, userId, 10)
+	inv := &Invoice{UserId: userId, TitleType: 1, TitleName: "张三", Email: "a@b.c"}
+	require.NoError(t, CreateInvoiceWithOrders(inv, []*InvoiceOrder{
+		{OrderType: InvoiceOrderTypeTopup, OrderId: orderId, TradeNo: fmt.Sprintf("TP%d", orderId), Money: 10},
+	}))
+	return inv
+}
+
+func TestCancelInvoice(t *testing.T) {
+	clearInvoiceTables(t)
+	inv := mustCreateInvoice(t, 7, 1)
+	// 他人不能撤销
+	require.ErrorIs(t, CancelInvoice(inv.Id, 999), ErrInvoiceNotFound)
+	// 本人撤销成功，订单释放
+	require.NoError(t, CancelInvoice(inv.Id, 7))
+	list, _ := GetInvoiceableOrders(7)
+	require.Len(t, list, 1)
+	var cnt int64
+	require.NoError(t, DB.Model(&InvoiceOrder{}).Count(&cnt).Error)
+	require.EqualValues(t, 0, cnt)
+}
+
+func TestRejectAndCompleteInvoice(t *testing.T) {
+	clearInvoiceTables(t)
+	inv := mustCreateInvoice(t, 7, 1)
+
+	// 驳回：必须释放订单、记录原因
+	require.NoError(t, RejectInvoice(inv.Id, "信息不全"))
+	got, err := GetInvoiceById(inv.Id)
+	require.NoError(t, err)
+	require.Equal(t, InvoiceStatusRejected, got.Status)
+	require.Equal(t, "信息不全", got.RejectReason)
+	list, _ := GetInvoiceableOrders(7)
+	require.Len(t, list, 1) // 已释放
+	// 已驳回不能再驳回/完成/撤销
+	require.ErrorIs(t, RejectInvoice(inv.Id, "again"), ErrInvoiceStatusInvalid)
+	require.ErrorIs(t, CompleteInvoiceWithFile(inv.Id, "a.pdf", "application/pdf", []byte("%PDF")), ErrInvoiceStatusInvalid)
+	require.ErrorIs(t, CancelInvoice(inv.Id, 7), ErrInvoiceStatusInvalid)
+
+	// 重新申请 → 上传完成
+	inv2 := mustCreateInvoice(t, 7, 2)
+	require.NoError(t, CompleteInvoiceWithFile(inv2.Id, "fp.pdf", "application/pdf", []byte("%PDF-1.7")))
+	got2, _ := GetInvoiceById(inv2.Id)
+	require.Equal(t, InvoiceStatusCompleted, got2.Status)
+	require.NotZero(t, got2.CompleteTime)
+	f, err := GetInvoiceFile(inv2.Id)
+	require.NoError(t, err)
+	require.Equal(t, "fp.pdf", f.Filename)
+	require.EqualValues(t, 8, f.Size)
+	// 已开票可重新上传（换票），文件覆盖
+	require.NoError(t, CompleteInvoiceWithFile(inv2.Id, "fp2.pdf", "application/pdf", []byte("%PDF-1.7-v2")))
+	f2, _ := GetInvoiceFile(inv2.Id)
+	require.Equal(t, "fp2.pdf", f2.Filename)
+	var fileCnt int64
+	require.NoError(t, DB.Model(&InvoiceFile{}).Count(&fileCnt).Error)
+	require.EqualValues(t, 1, fileCnt)
+	// 已开票不能撤销
+	require.ErrorIs(t, CancelInvoice(inv2.Id, 7), ErrInvoiceStatusInvalid)
+}
+
+func TestInvoiceQueries(t *testing.T) {
+	clearInvoiceTables(t)
+	// seed users for username assertion; clean up at end to avoid polluting other tests
+	require.NoError(t, DB.Exec("INSERT INTO users (id, username, password, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)", 7, "u7", "placeholder", "u7", 1, 1).Error)
+	require.NoError(t, DB.Exec("INSERT INTO users (id, username, password, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)", 8, "u8", "placeholder", "u8", 1, 1).Error)
+	defer func() {
+		DB.Exec("DELETE FROM users WHERE id IN (7, 8)")
+	}()
+
+	mustCreateInvoice(t, 7, 1)
+	mustCreateInvoice(t, 8, 2)
+	page := &common.PageInfo{Page: 1, PageSize: 10}
+	mine, total, err := GetUserInvoices(7, page)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Len(t, mine, 1)
+	all, totalAll, err := GetAllInvoices("", 0, page)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, totalAll)
+	require.Len(t, all, 2)
+	pending, totalPending, err := GetAllInvoices("", InvoiceStatusPending, page)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, totalPending)
+	require.Len(t, pending, 2)
+
+	// assert usernames are populated
+	usernameMap := map[int]string{}
+	for _, inv := range all {
+		usernameMap[inv.UserId] = inv.Username
+	}
+	require.Equal(t, "u7", usernameMap[7])
+	require.Equal(t, "u8", usernameMap[8])
+}
