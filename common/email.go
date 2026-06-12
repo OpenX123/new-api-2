@@ -33,25 +33,7 @@ func getSMTPAuth() smtp.Auth {
 	return smtp.PlainAuth("", SMTPAccount, SMTPToken, SMTPServer)
 }
 
-func SendEmail(subject string, receiver string, content string) error {
-	if SMTPFrom == "" { // for compatibility
-		SMTPFrom = SMTPAccount
-	}
-	id, err2 := generateMessageID()
-	if err2 != nil {
-		return err2
-	}
-	if SMTPServer == "" && SMTPAccount == "" {
-		return fmt.Errorf("SMTP 服务器未配置")
-	}
-	encodedSubject := fmt.Sprintf("=?UTF-8?B?%s?=", base64.StdEncoding.EncodeToString([]byte(subject)))
-	mail := []byte(fmt.Sprintf("To: %s\r\n"+
-		"From: %s <%s>\r\n"+
-		"Subject: %s\r\n"+
-		"Date: %s\r\n"+
-		"Message-ID: %s\r\n"+ // 添加 Message-ID 头
-		"Content-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n",
-		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, content))
+func sendRawMail(receiver string, mail []byte) error {
 	auth := getSMTPAuth()
 	addr := fmt.Sprintf("%s:%d", SMTPServer, SMTPPort)
 	to := strings.Split(receiver, ";")
@@ -101,4 +83,70 @@ func SendEmail(subject string, receiver string, content string) error {
 		SysError(fmt.Sprintf("failed to send email to %s: %v", receiver, err))
 	}
 	return err
+}
+
+func SendEmail(subject string, receiver string, content string) error {
+	if SMTPFrom == "" { // for compatibility
+		SMTPFrom = SMTPAccount
+	}
+	id, err2 := generateMessageID()
+	if err2 != nil {
+		return err2
+	}
+	if SMTPServer == "" && SMTPAccount == "" {
+		return fmt.Errorf("SMTP 服务器未配置")
+	}
+	encodedSubject := fmt.Sprintf("=?UTF-8?B?%s?=", base64.StdEncoding.EncodeToString([]byte(subject)))
+	mail := []byte(fmt.Sprintf("To: %s\r\n"+
+		"From: %s <%s>\r\n"+
+		"Subject: %s\r\n"+
+		"Date: %s\r\n"+
+		"Message-ID: %s\r\n"+ // 添加 Message-ID 头
+		"Content-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n",
+		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id, content))
+	return sendRawMail(receiver, mail)
+}
+
+// BuildMailWithAttachment 构造带单附件的 multipart/mixed 邮件原文（可独立测试）
+func BuildMailWithAttachment(subject, receiver, htmlContent, filename, mimeType string, attachment []byte) ([]byte, error) {
+	if SMTPFrom == "" {
+		SMTPFrom = SMTPAccount
+	}
+	id, err := generateMessageID()
+	if err != nil {
+		return nil, err
+	}
+	boundary := "np" + GetRandomString(16)
+	encodedSubject := fmt.Sprintf("=?UTF-8?B?%s?=", base64.StdEncoding.EncodeToString([]byte(subject)))
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("To: %s\r\nFrom: %s <%s>\r\nSubject: %s\r\nDate: %s\r\nMessage-ID: %s\r\n",
+		receiver, SystemName, SMTPFrom, encodedSubject, time.Now().Format(time.RFC1123Z), id))
+	b.WriteString(fmt.Sprintf("MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"%s\"\r\n\r\n", boundary))
+	b.WriteString(fmt.Sprintf("--%s\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s\r\n", boundary, htmlContent))
+	// 防 MIME 头注入：去掉引号与换行
+	safeFilename := strings.NewReplacer("\"", "", "\r", "", "\n", "").Replace(filename)
+	b.WriteString(fmt.Sprintf("--%s\r\nContent-Type: %s\r\nContent-Disposition: attachment; filename=\"%s\"\r\nContent-Transfer-Encoding: base64\r\n\r\n",
+		boundary, mimeType, safeFilename))
+	enc := base64.StdEncoding.EncodeToString(attachment)
+	for i := 0; i < len(enc); i += 76 { // RFC 2045 行宽
+		end := i + 76
+		if end > len(enc) {
+			end = len(enc)
+		}
+		b.WriteString(enc[i:end] + "\r\n")
+	}
+	b.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+	return []byte(b.String()), nil
+}
+
+// SendEmailWithAttachment 发送带附件邮件
+func SendEmailWithAttachment(subject, receiver, htmlContent, filename, mimeType string, attachment []byte) error {
+	if SMTPServer == "" && SMTPAccount == "" {
+		return fmt.Errorf("SMTP 服务器未配置")
+	}
+	mail, err := BuildMailWithAttachment(subject, receiver, htmlContent, filename, mimeType, attachment)
+	if err != nil {
+		return err
+	}
+	return sendRawMail(receiver, mail)
 }
