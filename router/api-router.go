@@ -381,6 +381,16 @@ func SetApiRouter(router *gin.Engine) {
 			modelsRoute.DELETE("/:id", controller.DeleteModelMeta)
 		}
 
+		invoiceRoute := apiRouter.Group("/invoice")
+		invoiceRoute.Use(middleware.AdminAuth())
+		{
+			invoiceRoute.GET("/", controller.GetAllInvoices)
+			invoiceRoute.GET("/:id", controller.GetInvoice)
+			invoiceRoute.GET("/:id/file", controller.DownloadInvoiceFileAdmin)
+			invoiceRoute.POST("/:id/file", controller.UploadInvoiceFile)
+			invoiceRoute.POST("/:id/reject", controller.RejectInvoiceAdmin)
+		}
+
 		// Deployments (model deployment management)
 		deploymentsRoute := apiRouter.Group("/deployments")
 		deploymentsRoute.Use(middleware.AdminAuth())

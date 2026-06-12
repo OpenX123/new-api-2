@@ -2,6 +2,9 @@ package controller
 
 import (
 	"fmt"
+	"html"
+	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -171,4 +174,141 @@ func serveInvoiceFile(c *gin.Context, invoiceId int) {
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`,
 		safeFilename, url.PathEscape(safeFilename)))
 	c.Data(200, f.MimeType, f.Data)
+}
+
+var invoiceAllowedMime = map[string]bool{
+	"application/pdf": true,
+	"image/png":       true,
+	"image/jpeg":      true,
+}
+
+// GetAllInvoices GET /api/invoice/
+func GetAllInvoices(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	keyword := c.Query("keyword")
+	status, _ := strconv.Atoi(c.Query("status")) // 0=全部
+	list, total, err := model.GetAllInvoices(keyword, status, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(list)
+	common.ApiSuccess(c, pageInfo)
+}
+
+// GetInvoice GET /api/invoice/:id
+func GetInvoice(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	inv, err := model.GetInvoiceById(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, inv)
+}
+
+// UploadInvoiceFile POST /api/invoice/:id/file  (multipart field: file)
+func UploadInvoiceFile(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		common.ApiErrorMsg(c, "请选择发票文件")
+		return
+	}
+	if fh.Size <= 0 || fh.Size > model.InvoiceFileMaxSize {
+		common.ApiErrorMsg(c, "文件大小须在 10MB 以内")
+		return
+	}
+	src, err := fh.Open()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	defer src.Close()
+	data, err := io.ReadAll(io.LimitReader(src, model.InvoiceFileMaxSize+1))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if len(data) > model.InvoiceFileMaxSize {
+		common.ApiErrorMsg(c, "文件大小须在 10MB 以内")
+		return
+	}
+	mimeType := http.DetectContentType(data)
+	if !invoiceAllowedMime[mimeType] {
+		common.ApiErrorMsg(c, "仅支持 PDF / PNG / JPG 格式")
+		return
+	}
+	if err := model.CompleteInvoiceWithFile(id, fh.Filename, mimeType, data); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if inv, err := model.GetInvoiceById(id); err == nil {
+		go sendInvoiceCompletedEmail(inv, fh.Filename, mimeType, data)
+	}
+	common.ApiSuccess(c, nil)
+}
+
+// RejectInvoiceAdmin POST /api/invoice/:id/reject  {reason}
+func RejectInvoiceAdmin(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Reason) == "" {
+		common.ApiErrorMsg(c, "驳回原因不能为空")
+		return
+	}
+	inv, err := model.GetInvoiceById(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.RejectInvoice(id, req.Reason); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	go sendInvoiceRejectedEmail(inv, req.Reason)
+	common.ApiSuccess(c, nil)
+}
+
+// DownloadInvoiceFileAdmin GET /api/invoice/:id/file
+func DownloadInvoiceFileAdmin(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	serveInvoiceFile(c, id)
+}
+
+func sendInvoiceCompletedEmail(inv *model.Invoice, filename, mimeType string, data []byte) {
+	subject := fmt.Sprintf("%s - 发票已开具 (%s)", common.SystemName, inv.InvoiceNo)
+	content := fmt.Sprintf("<p>您好，</p><p>您的开票申请 <b>%s</b>（抬头：%s，金额：%.2f）已开具完成，发票文件见附件。</p><p>也可登录控制台在 钱包 → 发票 中下载。</p>",
+		inv.InvoiceNo, html.EscapeString(inv.TitleName), inv.Money)
+	if err := common.SendEmailWithAttachment(subject, inv.Email, content, filename, mimeType, data); err != nil {
+		common.SysError("failed to send invoice email: " + err.Error())
+	}
+}
+
+func sendInvoiceRejectedEmail(inv *model.Invoice, reason string) {
+	subject := fmt.Sprintf("%s - 开票申请已驳回 (%s)", common.SystemName, inv.InvoiceNo)
+	content := fmt.Sprintf("<p>您好，</p><p>您的开票申请 <b>%s</b>（抬头：%s，金额：%.2f）已被驳回。</p><p>原因：%s</p><p>相关订单已释放，您可修改信息后重新申请。</p>",
+		inv.InvoiceNo, html.EscapeString(inv.TitleName), inv.Money, html.EscapeString(reason))
+	if err := common.SendEmail(subject, inv.Email, content); err != nil {
+		common.SysError("failed to send invoice reject email: " + err.Error())
+	}
 }
