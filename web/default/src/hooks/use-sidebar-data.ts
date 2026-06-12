@@ -27,6 +27,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  Receipt,
   Settings,
   Ticket,
   User,
@@ -135,6 +136,11 @@ export function useSidebarData(): SidebarData {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,
+          },
+          {
+            title: t('Invoice Management'),
+            url: '/invoices',
+            icon: Receipt,
           },
           {
             title: t('Subscription Management'),

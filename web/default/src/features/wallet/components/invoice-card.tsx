@@ -228,7 +228,7 @@ export function InvoiceCard() {
                     )}
                   </TableHead>
                   <TableHead>{t('Type')}</TableHead>
-                  <TableHead>{t('Trade No.')}</TableHead>
+                  <TableHead>{t('Trade No')}</TableHead>
                   <TableHead>{t('Time')}</TableHead>
                   <TableHead className='text-right'>{t('Amount')}</TableHead>
                 </TableRow>
@@ -285,7 +285,7 @@ export function InvoiceCard() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t('Invoice No.')}</TableHead>
+                  <TableHead>{t('Invoice No')}</TableHead>
                   <TableHead>{t('Title')}</TableHead>
                   <TableHead className='text-right'>{t('Amount')}</TableHead>
                   <TableHead>{t('Status')}</TableHead>

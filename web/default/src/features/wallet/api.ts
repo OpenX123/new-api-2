@@ -293,10 +293,16 @@ export async function downloadInvoiceFile(
   const res = await api.get(`/api/user/invoice/${id}/file`, {
     responseType: 'blob',
   })
+  const mime = (res.headers['content-type'] as string | undefined) || ''
+  const ext = mime.includes('png')
+    ? '.png'
+    : mime.includes('jpeg')
+      ? '.jpg'
+      : '.pdf'
   const url = URL.createObjectURL(res.data as Blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `invoice-${invoiceNo}.pdf`
+  a.download = `invoice-${invoiceNo}${ext}`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
