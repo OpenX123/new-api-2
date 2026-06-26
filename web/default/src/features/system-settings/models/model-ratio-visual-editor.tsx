@@ -249,6 +249,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
           isDraftNew: Boolean(!saved && draft),
         }
       })
+      .filter((row) => !row.isDraftDeleted)
       .sort((a, b) => a.name.localeCompare(b.name))
 
     if (filterMode === 'unset') {
@@ -430,6 +431,12 @@ const ModelRatioVisualEditorComponent = forwardRef<
         'billing_setting.billing_expr',
         JSON.stringify(billingExprMap, null, 2)
       )
+
+      if (editData?.name === name) {
+        setEditData(null)
+        setEditorOpen(false)
+        setSheetOpen(false)
+      }
     },
     [
       modelPrice,
@@ -443,6 +450,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
       billingMode,
       billingExpr,
       onChange,
+      editData,
     ]
   )
 
@@ -713,7 +721,6 @@ const ModelRatioVisualEditorComponent = forwardRef<
                 {
                   columnId: 'actions',
                   side: 'right',
-                  className: 'w-24 min-w-24',
                 },
               ]}
               colgroup={
@@ -722,7 +729,7 @@ const ModelRatioVisualEditorComponent = forwardRef<
                   <col className='w-[300px]' />
                   <col className='w-[120px]' />
                   <col className='w-[300px]' />
-                  <col className='w-24' />
+                  <col className='w-auto' />
                 </colgroup>
               }
               renderRow={(row, { getCellClassName }) => (

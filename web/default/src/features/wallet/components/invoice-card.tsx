@@ -221,7 +221,8 @@ export function InvoiceCard() {
                   <TableHead className='w-8'>
                     {invoiceableOrders.length > 0 && (
                       <Checkbox
-                        checked={someSelected ? 'mixed' : allSelected}
+                        checked={allSelected}
+                        indeterminate={someSelected}
                         onCheckedChange={toggleAll}
                         aria-label={t('Select all')}
                       />

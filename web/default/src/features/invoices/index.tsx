@@ -119,7 +119,8 @@ export function Invoices() {
     setPage(1)
   }
 
-  const handleStatusChange = (value: string) => {
+  const handleStatusChange = (value: string | null) => {
+    if (value === null) return
     setStatus(Number(value))
     setPage(1)
   }
