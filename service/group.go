@@ -10,6 +10,7 @@ import (
 func GetUserUsableGroups(userGroup string) map[string]string {
 	groupsCopy := setting.GetUserUsableGroupsCopy()
 	if userGroup != "" {
+		selfRemoved := false
 		specialSettings, b := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.Get(userGroup)
 		if b {
 			// 处理特殊可用分组
@@ -18,6 +19,9 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 					// 移除分组
 					groupToRemove := strings.TrimPrefix(specialGroup, "-:")
 					delete(groupsCopy, groupToRemove)
+					if groupToRemove == userGroup {
+						selfRemoved = true
+					}
 				} else if strings.HasPrefix(specialGroup, "+:") {
 					// 添加分组
 					groupToAdd := strings.TrimPrefix(specialGroup, "+:")
@@ -28,8 +32,9 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 				}
 			}
 		}
-		// 如果userGroup不在UserUsableGroups中，返回UserUsableGroups + userGroup
-		if _, ok := groupsCopy[userGroup]; !ok {
+		// 如果userGroup不在UserUsableGroups中，返回UserUsableGroups + userGroup。
+		// 但当用户组通过 "-:自身" 显式移除自己时,尊重该规则,不再自动加回。
+		if _, ok := groupsCopy[userGroup]; !ok && !selfRemoved {
 			groupsCopy[userGroup] = "用户分组"
 		}
 	}
