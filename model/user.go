@@ -589,6 +589,9 @@ func (user *User) Edit(updatePassword bool) error {
 	if updatePassword {
 		updates["password"] = newUser.Password
 	}
+	if newUser.Ratio != nil {
+		updates["ratio"] = *newUser.Ratio
+	}
 
 	DB.First(&user, user.Id)
 	if err = DB.Model(user).Updates(updates).Error; err != nil {
