@@ -41,6 +41,7 @@ type User struct {
 	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
 	RequestCount     int            `json:"request_count" gorm:"type:int;default:0;"`               // request number
 	Group            string         `json:"group" gorm:"type:varchar(64);default:'default'"`
+	Ratio            *float64       `json:"ratio,omitempty" gorm:"column:ratio"` // per-user billing ratio, nil/<=0 means 1.0
 	AffCode          string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount         int            `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
 	AffQuota         int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
@@ -64,8 +65,18 @@ func (user *User) ToBaseUser() *UserBase {
 		Username: user.Username,
 		Setting:  user.Setting,
 		Email:    user.Email,
+		Ratio:    user.Ratio,
 	}
 	return cache
+}
+
+// GetRatio returns the per-user billing ratio, normalizing unset or
+// invalid values to the neutral 1.0.
+func (user *User) GetRatio() float64 {
+	if user.Ratio == nil || *user.Ratio <= 0 {
+		return 1.0
+	}
+	return *user.Ratio
 }
 
 func (user *User) GetAccessToken() string {
