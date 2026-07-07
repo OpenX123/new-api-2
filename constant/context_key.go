@@ -51,6 +51,7 @@ const (
 	ContextKeyUserGroup   ContextKey = "user_group"
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
+	ContextKeyUserRatio   ContextKey = "user_ratio"
 
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 

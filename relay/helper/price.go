@@ -61,6 +61,14 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
 
+	// apply per-user billing ratio on top of the group-level ratio
+	if relayInfo.UserRatio > 0 && relayInfo.UserRatio != 1 {
+		groupRatioInfo.GroupRatio *= relayInfo.UserRatio
+		if groupRatioInfo.HasSpecialRatio {
+			groupRatioInfo.GroupSpecialRatio = groupRatioInfo.GroupRatio
+		}
+	}
+
 	return groupRatioInfo
 }
 

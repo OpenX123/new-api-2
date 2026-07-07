@@ -615,6 +615,10 @@ func UpdateUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
+	if updatedUser.Ratio != nil && (*updatedUser.Ratio <= 0 || *updatedUser.Ratio > 100) {
+		common.ApiErrorMsg(c, "user ratio must be in (0, 100]")
+		return
+	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)
 	if err != nil {
 		common.ApiError(c, err)
