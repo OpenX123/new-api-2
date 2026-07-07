@@ -207,5 +207,5 @@ func sendResponsesStreamData(c *gin.Context, info *relaycommon.RelayInfo, stream
 		return
 	}
 	data = helper.ReplaceResponseModelStr(data, info)
-	helper.ResponseChunkData(c, streamResponse, data)
+	_ = helper.ResponseChunkData(c, streamResponse, data)
 }

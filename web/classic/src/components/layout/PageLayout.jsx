@@ -21,6 +21,8 @@ import HeaderBar from './headerbar';
 import { Layout } from '@douyinfe/semi-ui';
 import SiderBar from './SiderBar';
 import App from '../../App';
+import FooterBar from './Footer';
+import ClassicFrontendDeprecationBanner from './ClassicFrontendDeprecationBanner';
 import { ToastContainer } from 'react-toastify';
 import ErrorBoundary from '../common/ErrorBoundary';
 import React, { useContext, useEffect, useState } from 'react';
@@ -208,6 +210,7 @@ const PageLayout = () => {
             minHeight: 0,
           }}
         >
+          <ClassicFrontendDeprecationBanner />
           <Content
             className={isFixedLayout ? undefined : 'public-page-content'}
             style={{
