@@ -8,5 +8,7 @@
   "No custom links configured.": "No custom links configured.",
   "Remove link": "Remove link",
   "Require login": "Require login",
-  "Supports placeholder {status_code}. Leave blank to use the default message.": "Supports placeholder {status_code}. Leave blank to use the default message."
+  "Supports placeholder {status_code}. Leave blank to use the default message.": "Supports placeholder {status_code}. Leave blank to use the default message.",
+  "Max Concurrency": "Max Concurrency",
+  "Maximum concurrent requests allowed, 0 means unlimited": "Maximum concurrent requests allowed, 0 means unlimited"
 }
