@@ -5,10 +5,12 @@
   "Custom external links": "Custom external links",
   "Hide Upstream Errors": "Hide Upstream Errors",
   "Mask upstream error details for non-admin users to avoid leaking channel information": "Mask upstream error details for non-admin users to avoid leaking channel information",
+  "Multiplied with group ratio for billing. Default 1 (no effect).": "Multiplied with group ratio for billing. Default 1 (no effect).",
   "No custom links configured.": "No custom links configured.",
   "Remove link": "Remove link",
   "Require login": "Require login",
   "Supports placeholder {status_code}. Leave blank to use the default message.": "Supports placeholder {status_code}. Leave blank to use the default message.",
+  "User Ratio": "User Ratio",
   "Max Concurrency": "Max Concurrency",
   "Maximum concurrent requests allowed, 0 means unlimited": "Maximum concurrent requests allowed, 0 means unlimited"
 }

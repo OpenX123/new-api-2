@@ -1,5 +1,6 @@
 {
   "Append additional links to the header. Saved entries with an empty URL are dropped.": "Append additional links to the header. Saved entries with an empty URL are dropped.",
   "Mask upstream error details for non-admin users to avoid leaking channel information": "Mask upstream error details for non-admin users to avoid leaking channel information",
+  "Multiplied with group ratio for billing. Default 1 (no effect).": "Multiplied with group ratio for billing. Default 1 (no effect).",
   "Supports placeholder {status_code}. Leave blank to use the default message.": "Supports placeholder {status_code}. Leave blank to use the default message."
 }
