@@ -423,10 +423,11 @@ export function UsersMutateDrawer({
                         <FormLabel>{t('User Ratio')}</FormLabel>
                         <FormControl>
                           <Input
+                            {...field}
                             type='number'
                             step='0.01'
                             min='0.01'
-                            value={field.value ?? 1}
+                            value={field.value ?? ''}
                             onChange={(e) =>
                               field.onChange(
                                 e.target.value === ''
