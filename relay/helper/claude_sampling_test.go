@@ -120,6 +120,44 @@ func TestNormalizeClaudeSamplingForModel(t *testing.T) {
 		}
 	})
 
+	t.Run("sonnet-5 strips sampling params", func(t *testing.T) {
+		req := &dto.ClaudeRequest{
+			Model:       "claude-sonnet-5",
+			Temperature: common.GetPointer[float64](0.7),
+			TopP:        common.GetPointer[float64](0.9),
+			TopK:        common.GetPointer[int](40),
+		}
+		NormalizeClaudeSamplingForModel(req)
+		if req.Temperature != nil || req.TopP != nil || req.TopK != nil {
+			t.Fatalf("sonnet-5 sampling params not stripped: %+v", req)
+		}
+	})
+
+	t.Run("mythos-5 strips sampling params", func(t *testing.T) {
+		req := &dto.ClaudeRequest{
+			Model:       "claude-mythos-5",
+			Temperature: common.GetPointer[float64](0.7),
+		}
+		NormalizeClaudeSamplingForModel(req)
+		if req.Temperature != nil {
+			t.Fatalf("mythos-5 temperature not stripped: %+v", req)
+		}
+	})
+
+	t.Run("sonnet-5 converts enabled thinking to adaptive", func(t *testing.T) {
+		req := &dto.ClaudeRequest{
+			Model: "claude-sonnet-5",
+			Thinking: &dto.Thinking{
+				Type:         "enabled",
+				BudgetTokens: common.GetPointer[int](2048),
+			},
+		}
+		NormalizeClaudeSamplingForModel(req)
+		if req.Thinking == nil || req.Thinking.Type != "adaptive" {
+			t.Fatalf("sonnet-5 thinking not converted to adaptive: %+v", req.Thinking)
+		}
+	})
+
 	t.Run("generic claude model with both drops top_p", func(t *testing.T) {
 		req := &dto.ClaudeRequest{
 			Model:       "claude-3-5-sonnet",
