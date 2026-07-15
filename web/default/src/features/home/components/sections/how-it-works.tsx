@@ -27,36 +27,32 @@ export function HowItWorks() {
   const steps = [
     {
       num: '1',
-      title: t('Configure'),
-      desc: t(
-        'Add your API keys, set up channels and configure access permissions'
-      ),
+      title: t('Add a key'),
+      desc: t('Create a key and choose how it can be used.'),
       icon: <Settings className='size-6' strokeWidth={1.5} />,
     },
     {
       num: '2',
-      title: t('Connect'),
-      desc: t(
-        'Connect through OpenAI, Claude, Gemini, and other compatible API routes'
-      ),
+      title: t('Choose a route'),
+      desc: t('Pick the models and compatible route your tool expects.'),
       icon: <Zap className='size-6' strokeWidth={1.5} />,
     },
     {
       num: '3',
-      title: t('Monitor'),
-      desc: t('Track usage, costs and performance with real-time analytics'),
+      title: t('Review activity'),
+      desc: t('See requests, usage, and costs in the console.'),
       icon: <BarChart3 className='size-6' strokeWidth={1.5} />,
     },
   ]
 
   return (
-    <section className='border-border/40 relative z-10 border-t px-6 py-24 md:py-32'>
+    <section className='border-border relative z-10 border-t px-6 py-24 md:py-32'>
       <div className='mx-auto max-w-6xl'>
         <AnimateInView className='mb-16 text-center md:mb-20'>
           <p className='text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase'>
             {t('How It Works')}
           </p>
-          <h2 className='text-2xl font-bold tracking-tight md:text-3xl'>
+          <h2 className='font-serif text-2xl font-medium tracking-[-0.035em] md:text-3xl'>
             {t('Three steps to get started')}
           </h2>
         </AnimateInView>
@@ -70,14 +66,16 @@ export function HowItWorks() {
               className='relative flex flex-col items-center text-center'
             >
               <div className='relative mb-6'>
-                <div className='text-muted-foreground border-border/50 bg-muted/30 flex size-16 items-center justify-center rounded-2xl border transition-colors'>
+                <div className='text-foreground border-border bg-card flex size-16 items-center justify-center rounded-2xl border transition-colors'>
                   {step.icon}
                 </div>
                 <div className='bg-foreground text-background absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full text-xs font-bold'>
                   {step.num}
                 </div>
               </div>
-              <h3 className='mb-2 text-base font-semibold'>{step.title}</h3>
+              <h3 className='font-serif mb-2 text-[1.05rem] font-medium tracking-[-0.02em]'>
+                {step.title}
+              </h3>
               <p className='text-muted-foreground max-w-[240px] text-sm leading-relaxed'>
                 {step.desc}
               </p>

@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { Radio as RadioPrimitive } from '@base-ui/react/radio'
 import { RadioGroup as Radio } from '@base-ui/react/radio-group'
 import { CircleCheck, Palette, RotateCcw } from 'lucide-react'
-import { type SVGProps } from 'react'
+import type { SVGProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { IconDir } from '@/assets/custom/icon-dir'
@@ -49,16 +49,13 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { useDirection } from '@/context/direction-provider'
-import { type Collapsible, useLayout } from '@/context/layout-provider'
+import { useLayout, type Collapsible } from '@/context/layout-provider'
 import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useTheme } from '@/context/theme-provider'
-import {
-  type ContentLayout,
-  THEME_PRESETS,
-  type ThemeFont,
-  type ThemePreset,
-  type ThemeRadius,
-  type ThemeScale,
+import type {
+  ContentLayout,
+  ThemeRadius,
+  ThemeScale,
 } from '@/lib/theme-customization'
 import { cn } from '@/lib/utils'
 
@@ -106,8 +103,6 @@ export function ConfigDrawer() {
         </SheetHeader>
         <div className={sideDrawerFormClassName()}>
           <ThemeConfig />
-          <PresetConfig />
-          <FontConfig />
           <RadiusConfig />
           <ScaleConfig />
           <SidebarConfig />
@@ -243,153 +238,6 @@ function ThemeConfig() {
   )
 }
 
-function PresetConfig() {
-  const { t } = useTranslation()
-  const { defaults, customization, setPreset } = useThemeCustomization()
-  return (
-    <div>
-      <SectionTitle
-        title={t('Color preset')}
-        showReset={customization.preset !== defaults.preset}
-        onReset={() => setPreset(defaults.preset)}
-      />
-      <Radio
-        value={customization.preset}
-        onValueChange={(v) => setPreset(v as ThemePreset)}
-        className='grid w-full grid-cols-4 gap-3'
-        aria-label={t('Select color preset')}
-      >
-        {THEME_PRESETS.map((preset) => (
-          <Item
-            key={preset.value}
-            value={preset.value}
-            className='group flex flex-col items-stretch outline-none'
-            aria-label={t(`preset.${preset.value}`)}
-          >
-            <div
-              className={cn(
-                'ring-border relative h-12 rounded-md ring-[1px] transition',
-                'group-data-checked:ring-primary group-data-checked:shadow-md',
-                'group-focus-visible:ring-2',
-                'group-hover:ring-primary/60'
-              )}
-            >
-              <div
-                aria-hidden='true'
-                className='absolute inset-0 rounded-md'
-                style={
-                  preset.value === 'default'
-                    ? {
-                        background:
-                          'linear-gradient(135deg, var(--background) 0%, var(--muted) 50%, var(--foreground) 100%)',
-                      }
-                    : {
-                        background: `linear-gradient(135deg, ${preset.swatches[0]} 0%, ${preset.swatches[1] ?? preset.swatches[0]} 100%)`,
-                      }
-                }
-              />
-              <CircleCheck
-                className={cn(
-                  'fill-primary absolute top-0 right-0 z-10 size-5 translate-x-1/2 -translate-y-1/2 stroke-white',
-                  'group-data-unchecked:hidden'
-                )}
-                aria-hidden='true'
-              />
-            </div>
-            <div className='mt-1.5 truncate text-center text-xs'>
-              {t(`preset.${preset.value}`)}
-            </div>
-          </Item>
-        ))}
-      </Radio>
-    </div>
-  )
-}
-
-/**
- * Font options shown in the theme drawer.
- *
- * Each option renders a live "Aa" preview in the font it represents.
- * `Auto` deliberately leaves `fontFamily` undefined so the preview inherits
- * the currently active body font — that way the user sees what `Auto` will
- * actually look like for the active preset (Anthropic → serif glyphs,
- * everything else → sans glyphs) without us having to duplicate the
- * preset-default mapping in the UI.
- */
-const FONT_OPTIONS: {
-  value: ThemeFont
-  label: string
-  // CSS font-family applied to the "Aa" preview. `undefined` = inherit
-  // from the current theme (used by the `default` option).
-  preview?: string
-}[] = [
-  { value: 'default', label: 'Auto', preview: undefined },
-  { value: 'sans', label: 'Sans', preview: 'var(--font-sans)' },
-  { value: 'serif', label: 'Serif', preview: 'var(--font-serif)' },
-]
-
-function FontConfig() {
-  const { t } = useTranslation()
-  const { defaults, customization, setFont } = useThemeCustomization()
-  return (
-    <div>
-      <SectionTitle
-        title={t('Font')}
-        showReset={customization.font !== defaults.font}
-        onReset={() => setFont(defaults.font)}
-      />
-      <Radio
-        value={customization.font}
-        onValueChange={(v) => setFont(v as ThemeFont)}
-        className='grid w-full grid-cols-3 gap-4'
-        aria-label={t('Select body font')}
-      >
-        {FONT_OPTIONS.map((option) => (
-          <Item
-            key={option.value}
-            value={option.value}
-            className='group flex flex-col items-stretch outline-none'
-            aria-label={
-              option.value === 'default' ? t('System default') : option.label
-            }
-          >
-            <div
-              className={cn(
-                'ring-border relative h-12 rounded-md ring-[1px] transition',
-                'group-data-checked:ring-primary group-data-checked:shadow-md',
-                'group-focus-visible:ring-2',
-                'group-hover:ring-primary/60'
-              )}
-            >
-              <CircleCheck
-                className={cn(
-                  'fill-primary absolute top-0 right-0 z-10 size-5 translate-x-1/2 -translate-y-1/2 stroke-white',
-                  'group-data-unchecked:hidden'
-                )}
-                aria-hidden='true'
-              />
-              <span
-                aria-hidden='true'
-                className='text-foreground absolute inset-0 flex items-center justify-center text-lg leading-none font-medium'
-                style={
-                  option.preview
-                    ? { fontFamily: option.preview }
-                    : // `font: inherit` defers to the active theme so the
-                      // "Auto" tile previews what the resolved font will be.
-                      { font: 'inherit', fontSize: '1.125rem' }
-                }
-              >
-                Aa
-              </span>
-            </div>
-            <div className='mt-1.5 text-center text-xs'>{option.label}</div>
-          </Item>
-        ))}
-      </Radio>
-    </div>
-  )
-}
-
 const RADIUS_OPTIONS: {
   value: ThemeRadius
   label: string
@@ -469,13 +317,15 @@ function ScalePreview(props: { rows: number; rowGap: string }) {
       className='absolute inset-2.5 flex flex-col justify-center'
       style={{ gap: props.rowGap }}
     >
-      {Array.from({ length: props.rows }).map((_, i) => (
+      {Array.from({ length: props.rows }, (_, index) => 85 - index * 10).map(
+        (width) => (
         <span
-          key={i}
+          key={width}
           className='bg-foreground/60 block h-[2px] rounded-full'
-          style={{ width: `${85 - i * 10}%` }}
+          style={{ width: `${width}%` }}
         />
-      ))}
+        )
+      )}
     </div>
   )
 }

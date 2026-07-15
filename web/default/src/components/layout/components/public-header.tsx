@@ -186,7 +186,7 @@ export function PublicHeader(props: PublicHeaderProps) {
             className={cn(
               'flex items-center justify-between transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
               scrolled
-                ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
+                ? 'border-border/75 bg-background/82 h-12 rounded-2xl border pr-1.5 pl-4 shadow-[0_12px_30px_-24px_rgb(75_44_25_/_0.55)] backdrop-blur-2xl dark:shadow-[0_12px_30px_-24px_rgb(0_0_0_/_0.72)]'
                 : 'h-16 px-2'
             )}
           >
@@ -209,7 +209,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                   />
                 )}
               </div>
-              <span className='text-sm font-semibold tracking-tight'>
+              <span className='font-serif text-[0.98rem] font-medium tracking-[-0.025em]'>
                 {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
               </span>
             </Link>

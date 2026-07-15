@@ -20,11 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/public-sans';
-/* Editorial serif (Lora) backing the `serif` font axis and the Anthropic
- * preset's default typography. See `--font-serif` in theme.css for the
- * full Latin + CJK fallback stack and `theme-presets.css` for the cascade
- * that activates it. Loaded globally so font-switching is instantaneous
- * with no FOUT once the variable is fetched. */
+/* Editorial serif used sparingly for product and section headings. */
 @import '@fontsource-variable/lora';
 
 @import './theme.css';
@@ -58,9 +54,6 @@ For commercial licensing, please contact support@quantumnous.com
   }
   body {
     @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;
-    /* Font is driven by the theme's font axis via `--font-body`
-     * (defined in theme.css, swapped by `[data-theme-font='...']` blocks
-     * in theme-presets.css). Defaults to the project's humanist sans. */
     font-family: var(--font-body);
   }
 
@@ -82,6 +75,41 @@ For commercial licensing, please contact support@quantumnous.com
     textarea {
       font-size: 16px !important;
     }
+  }
+}
+
+@layer components {
+  h1,
+  h2,
+  [data-slot='dialog-title'],
+  [data-slot='sheet-title'],
+  [data-slot='alert-dialog-title'] {
+    font-family: var(--font-serif);
+    font-weight: 560;
+    letter-spacing: -0.025em;
+  }
+
+  [data-slot='card'],
+  [data-slot='dialog-content'],
+  [data-slot='sheet-content'],
+  [data-slot='popover-content'] {
+    border-color: var(--border);
+    box-shadow: 0 1px 1px rgb(0 0 0 / 0.015);
+  }
+
+  [data-sidebar='sidebar-inner'] {
+    background-image: none;
+  }
+
+  [data-sidebar='menu-button'][data-active='true'] {
+    box-shadow: inset 2px 0 0 var(--primary);
+  }
+
+  .dark [data-slot='card'],
+  .dark [data-slot='dialog-content'],
+  .dark [data-slot='sheet-content'],
+  .dark [data-slot='popover-content'] {
+    box-shadow: 0 1px 1px rgb(0 0 0 / 0.18);
   }
 }
 
