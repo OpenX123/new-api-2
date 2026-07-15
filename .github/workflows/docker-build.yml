@@ -2,6 +2,8 @@ name: Publish Docker image (Multi-arch)
 
 on:
   push:
+    branches:
+      - main
     tags:
       - '*'
       - '!nightly*'
@@ -47,8 +49,10 @@ jobs:
               echo "::error::Tag '$TAG' does not exist"
               exit 1
             fi
-          else
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG=${GITHUB_REF#refs/tags/}
+          else
+            TAG="${GITHUB_REF_NAME}-$(date +'%Y%m%d')-$(git rev-parse --short HEAD)"
           fi
           echo "TAG=${TAG}" >> $GITHUB_ENV
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
@@ -81,6 +85,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/new-api:${{ env.TAG }}-${{ matrix.arch }}
             ghcr.io/${{ github.repository_owner }}/new-api:latest-${{ matrix.arch }}
+            ghcr.io/${{ github.repository_owner }}/new-api-2:${{ env.TAG }}-${{ matrix.arch }}
+            ghcr.io/${{ github.repository_owner }}/new-api-2:latest-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -91,13 +97,16 @@ jobs:
         uses: sigstore/cosign-installer@v3
 
       - name: Sign image with cosign
-        run: cosign sign --yes ghcr.io/${{ github.repository_owner }}/new-api@${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes ghcr.io/${{ github.repository_owner }}/new-api@${{ steps.build.outputs.digest }}
+          cosign sign --yes ghcr.io/${{ github.repository_owner }}/new-api-2@${{ steps.build.outputs.digest }}
 
       - name: Image summary
         run: |
           echo "### Docker Image Digest (${{ matrix.arch }})" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "ghcr.io/${{ github.repository_owner }}/new-api:${TAG}-${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
+          echo "ghcr.io/${{ github.repository_owner }}/new-api-2:${TAG}-${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
@@ -134,9 +143,19 @@ jobs:
             -t ghcr.io/${{ github.repository_owner }}/new-api:latest \
             ghcr.io/${{ github.repository_owner }}/new-api:latest-amd64
 
+      - name: Create & push fork manifests
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/new-api-2:${TAG} \
+            ghcr.io/${{ github.repository_owner }}/new-api-2:${TAG}-amd64
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/new-api-2:latest \
+            ghcr.io/${{ github.repository_owner }}/new-api-2:latest-amd64
+
       - name: Manifest summary
         run: |
           echo "### Multi-arch Manifest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/new-api:${TAG} >> $GITHUB_STEP_SUMMARY
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/new-api-2:${TAG} >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
