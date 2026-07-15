@@ -16,38 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { cn } from '@/lib/utils'
-
-import { BrandImage } from './brand-image'
-
-interface HeaderLogoProps {
-  src: string
-  alt?: string
-  loading: boolean
-  logoLoaded: boolean
-  className?: string
-}
-
-/**
- * Logo component for header with loading state
- * Shows image only when fully loaded for smooth UX
- */
-export function HeaderLogo({
-  src,
-  alt = 'logo',
-  loading,
-  logoLoaded,
-  className,
-}: HeaderLogoProps) {
-  return (
-    <BrandImage
-      src={src}
-      alt={alt}
-      className={cn(
-        'h-6 w-6 rounded-full transition-opacity duration-200',
-        !loading && logoLoaded ? 'opacity-100' : 'opacity-0',
-        className
-      )}
-    />
-  )
+export function isInlineSvgLogo(value: string): boolean {
+  return /^<svg[\s>]/i.test(value.trim())
 }

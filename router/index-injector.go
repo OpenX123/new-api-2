@@ -46,6 +46,10 @@ var (
 	faviconAltNeedle2 = []byte(`<link rel="icon" href="/logo.png" />`)
 )
 
+func isInlineSVGLogo(logo string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(logo)), "<svg")
+}
+
 // renderIndex returns the index.html bytes for the given theme with the
 // current SystemName / Logo substituted in. The result is cached per
 // (theme, systemName, logo) triple.
@@ -73,7 +77,7 @@ func (ij *indexInjector) renderIndex(theme string, base []byte) []byte {
 	}
 
 	// Logo: if admin uploaded a custom logo URL, swap the favicon href.
-	if logo != "" && !strings.Contains(logo, "/logo.png") {
+	if logo != "" && !isInlineSVGLogo(logo) && !strings.Contains(logo, "/logo.png") {
 		// Replace any occurrence of href="/logo.png" with the new URL.
 		// Quote the URL safely (admin-controlled, expected to be a clean URL,
 		// but escape just in case).

@@ -24,6 +24,8 @@ import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { cn } from '@/lib/utils'
 
+import { BrandImage } from './brand-image'
+
 interface FooterLink {
   text: string
   href: string
@@ -226,7 +228,7 @@ export function Footer(props: FooterProps) {
     return (
       <footer
         className={cn(
-          'border-border/40 relative z-10 border-t',
+          'border-border/75 bg-card/20 relative z-10 border-t',
           props.className
         )}
       >
@@ -248,19 +250,22 @@ export function Footer(props: FooterProps) {
 
   return (
     <footer
-      className={cn('border-border/40 relative z-10 border-t', props.className)}
+      className={cn(
+        'border-border/75 bg-card/20 relative z-10 border-t',
+        props.className
+      )}
     >
       <div className='mx-auto max-w-6xl px-6 py-12 md:py-16'>
         <div className='flex flex-col justify-between gap-10 md:flex-row md:gap-16'>
           {/* Brand column */}
           <div className='shrink-0'>
             <Link to='/' className='group flex items-center gap-2.5'>
-              <img
+              <BrandImage
                 src={displayLogo}
                 alt={displayName}
                 className='size-7 rounded-lg object-contain'
               />
-              <span className='text-sm font-semibold tracking-tight'>
+              <span className='font-serif text-[0.98rem] font-medium tracking-[-0.025em]'>
                 {displayName}
               </span>
             </Link>

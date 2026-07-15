@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { isInlineSvgLogo } from '@/lib/logo'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
@@ -59,7 +60,9 @@ const _systemInfoSchema = z.object({
   }),
   SystemName: z.string().min(1),
   ServerAddress: z.string().optional(),
-  Logo: z.string().url().optional().or(z.literal('')),
+  Logo: z.string().trim().refine(isLogoValue, {
+    error: 'Enter an image URL or SVG code',
+  }),
   Footer: z.string().optional(),
   About: z.string().optional(),
   HomePageContent: z.string().optional(),
@@ -73,6 +76,14 @@ type SystemInfoFormValues = z.infer<typeof _systemInfoSchema>
 
 type SystemInfoSectionProps = {
   defaultValues: SystemInfoFormValues
+}
+
+function isLogoValue(value: string): boolean {
+  return (
+    value === '' ||
+    isInlineSvgLogo(value) ||
+    z.string().url().safeParse(value).success
+  )
 }
 
 function normalizeValue(value: unknown): string {
@@ -109,7 +120,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
       error: () => t('System name is required'),
     }),
     ServerAddress: z.string().optional(),
-    Logo: z.string().url().optional().or(z.literal('')),
+    Logo: z.string().trim().refine(isLogoValue, {
+      error: () => t('Enter an image URL or SVG code'),
+    }),
     Footer: z.string().optional(),
     About: z.string().optional(),
     HomePageContent: z.string().optional(),
@@ -276,15 +289,16 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                 name='Logo'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Logo URL')}</FormLabel>
+                    <FormLabel>{t('Logo')}</FormLabel>
                     <FormControl>
-                      <Input
-                        placeholder={t('https://example.com/logo.png')}
+                      <Textarea
+                        placeholder='<svg viewBox="0 0 24 24">...</svg>'
+                        rows={3}
                         {...field}
                       />
                     </FormControl>
                     <FormDescription>
-                      {t('URL to your logo image (optional)')}
+                      {t('Paste an image URL or SVG code (optional)')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/stretchr/testify/require"
 )
 
 const defaultIndexFixture = `<!doctype html>
@@ -94,6 +95,16 @@ func TestRenderIndex_CustomLogo_ReplacesFavicon(t *testing.T) {
 		if strings.Contains(s, `href="/logo.png"`) {
 			t.Errorf("stale /logo.png remains; got:\n%s", s)
 		}
+	})
+}
+
+func TestRenderIndex_InlineSvgLogo_KeepsDefaultFavicon(t *testing.T) {
+	resetInjector()
+	withSystemBranding(t, "YiYongAI", `<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" /></svg>`, func() {
+		out := injector.renderIndex("default", []byte(defaultIndexFixture))
+
+		require.Contains(t, string(out), `href="/logo.png"`)
+		require.NotContains(t, string(out), `<svg`)
 	})
 }
 

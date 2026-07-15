@@ -20,6 +20,7 @@ import { useEffect, useCallback } from 'react'
 
 import { DEFAULT_SYSTEM_NAME, DEFAULT_LOGO } from '@/lib/constants'
 import { applyFaviconToDom } from '@/lib/dom-utils'
+import { isInlineSvgLogo } from '@/lib/logo'
 import {
   useSystemConfigStore,
   type CurrencyConfig,
@@ -176,6 +177,11 @@ export function useSystemConfig(options: UseSystemConfigOptions = {}) {
 
     // Skip if logo is already loaded
     if (!logo || logo === loadedLogoUrl) return
+
+    if (isInlineSvgLogo(logo)) {
+      setLoadedLogoUrl(logo)
+      return
+    }
 
     // Preload new logo
     return preloadImage(
