@@ -313,7 +313,7 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
     },
     {
       id: 'actions',
-      header: () => t('Actions'),
+      header: () => t('Actions (click to import to CC)'),
       cell: ({ row }) => <DataTableRowActions row={row} />,
       meta: { pinned: 'right' as const },
     },

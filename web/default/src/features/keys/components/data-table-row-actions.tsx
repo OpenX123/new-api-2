@@ -34,6 +34,7 @@ import { toast } from 'sonner'
 
 import { DataTableRowActionMenu } from '@/components/data-table/core/row-action-menu'
 import { Button } from '@/components/ui/button'
+import { IconClaude, IconOpenAI } from '@/assets/brand-icons'
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -189,6 +190,17 @@ export function DataTableRowActions<TData>({
     }
   }
 
+  const handleCCSwitchImport = useCallback(
+    async (app: 'claude' | 'codex') => {
+      const realKey = await resolveRealKey(apiKey.id)
+      if (!realKey) return
+      setResolvedKey(realKey)
+      setCurrentRow(apiKey)
+      setOpen(`cc-switch-${app}`)
+    },
+    [apiKey, resolveRealKey, setCurrentRow, setOpen, setResolvedKey]
+  )
+
   let statusIcon = <Power className='size-4' />
   if (isTogglingStatus) {
     statusIcon = <Loader2 className='size-4 animate-spin' />
@@ -237,6 +249,42 @@ export function DataTableRowActions<TData>({
           <Edit />
         </TooltipTrigger>
         <TooltipContent>{t('Edit')}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              onClick={() => void handleCCSwitchImport('claude')}
+              aria-label={t('Import Claude configuration and API key to CC Switch')}
+            />
+          }
+        >
+          <IconClaude />
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('Import Claude configuration and API key to CC Switch')}
+        </TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              onClick={() => void handleCCSwitchImport('codex')}
+              aria-label={t('Import Codex configuration and API key to CC Switch')}
+            />
+          }
+        >
+          <IconOpenAI />
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('Import Codex configuration and API key to CC Switch')}
+        </TooltipContent>
       </Tooltip>
 
       <DataTableRowActionMenu

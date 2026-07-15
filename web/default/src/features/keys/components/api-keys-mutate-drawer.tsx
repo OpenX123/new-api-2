@@ -270,7 +270,9 @@ export function ApiKeysMutateDrawer({
           <SheetDescription>
             {isUpdate
               ? t('Update the API key by providing necessary info.')
-              : t('Add a new API key by providing necessary info.')}
+              : t(
+                  'Create the key, then use the Claude or Codex icon in its Actions column to import it to CC Switch in one click.'
+                )}
           </SheetDescription>
         </SheetHeader>
         <Form {...form}>
