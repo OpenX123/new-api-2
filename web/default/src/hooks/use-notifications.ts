@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 
+import type { AnnouncementItem } from '@/components/notification-types'
 import { useStatus } from '@/hooks/use-status'
 import { getNotice } from '@/lib/api'
 import { useNotificationStore } from '@/stores/notification-store'
@@ -81,11 +82,13 @@ export function useNotifications() {
 
   // Fetch Announcements from status
   const { status, loading: statusLoading } = useStatus()
-  const announcementsEnabled = status?.announcements_enabled ?? false
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const announcements: Record<string, unknown>[] = announcementsEnabled
-    ? ((status?.announcements || []) as Record<string, unknown>[]).slice(0, 20)
-    : []
+  const announcements = useMemo<AnnouncementItem[]>(() => {
+    if (!status?.announcements_enabled) return []
+
+    return (
+      (status.announcements as Record<string, unknown>[] | undefined) || []
+    ).slice(0, 20) as AnnouncementItem[]
+  }, [status?.announcements, status?.announcements_enabled])
 
   // Notification store
   const {
@@ -167,6 +170,7 @@ export function useNotifications() {
     notice: noticeContent,
     announcements,
     loading: noticeLoading || statusLoading,
+    noticeLoading,
 
     // Unread counts
     unreadCount: unreadCounts.total,

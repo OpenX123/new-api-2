@@ -16,24 +16,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { Footer } from '@/components/layout/components/footer'
 import { RichContent } from '@/components/rich-content'
 import { useTheme } from '@/context/theme-provider'
+import { useNotifications } from '@/hooks/use-notifications'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import { HomeNoticeDialog } from './components/home-notice-dialog'
 import { useHomePageContent } from './hooks'
+import { shouldOpenDailyNotice } from './lib/daily-notice'
 
 export function Home() {
   const { i18n, t } = useTranslation()
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const { resolvedTheme } = useTheme()
   const { auth } = useAuthStore()
+  const notifications = useNotifications()
+  const [noticeOpen, setNoticeOpen] = useState(false)
+  const [localDate, setLocalDate] = useState(() => new Date().toDateString())
   const isAuthenticated = !!auth.user
   const { content, isLoaded, isUrl } = useHomePageContent()
 
@@ -58,12 +64,52 @@ export function Home() {
     }
   }, [isUrl, syncIframePreferences])
 
+  useEffect(() => {
+    if (
+      shouldOpenDailyNotice(
+        notifications.notice,
+        notifications.noticeLoading,
+        localStorage.getItem('notice_close_date'),
+        localDate
+      )
+    ) {
+      setNoticeOpen(true)
+    }
+  }, [localDate, notifications.notice, notifications.noticeLoading])
+
+  useEffect(() => {
+    const now = new Date()
+    const nextDay = new Date(now)
+    nextDay.setHours(24, 0, 0, 0)
+    const timer = window.setTimeout(() => {
+      setLocalDate(new Date().toDateString())
+    }, nextDay.getTime() - now.getTime() + 1000)
+
+    return () => window.clearTimeout(timer)
+  }, [localDate])
+
+  const closeNotice = () => {
+    localStorage.setItem('notice_close_date', localDate)
+    setNoticeOpen(false)
+  }
+
+  const noticeDialog = (
+    <HomeNoticeDialog
+      open={noticeOpen}
+      onClose={closeNotice}
+      notice={notifications.notice}
+      announcements={notifications.announcements}
+      loading={notifications.loading}
+    />
+  )
+
   if (!isLoaded) {
     return (
       <PublicLayout showMainContainer={false}>
         <main className='flex min-h-screen items-center justify-center'>
           <div className='text-muted-foreground'>{t('Loading...')}</div>
         </main>
+        {noticeDialog}
       </PublicLayout>
     )
   }
@@ -80,6 +126,7 @@ export function Home() {
             sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts'
             onLoad={syncIframePreferences}
           />
+          {noticeDialog}
         </PublicLayout>
       )
     }
@@ -95,6 +142,7 @@ export function Home() {
             content={content}
             className='custom-home-content'
           />
+          {noticeDialog}
         </PublicLayout>
       )
     }
@@ -108,6 +156,7 @@ export function Home() {
             className='custom-home-content'
           />
         </div>
+        {noticeDialog}
       </PublicLayout>
     )
   }
@@ -120,6 +169,7 @@ export function Home() {
       <HowItWorks />
       <CTA isAuthenticated={isAuthenticated} />
       <Footer />
+      {noticeDialog}
     </PublicLayout>
   )
 }

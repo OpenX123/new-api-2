@@ -20,6 +20,10 @@ import type { TFunction } from 'i18next'
 import { Bell, Megaphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import type {
+  AnnouncementItem,
+  NotificationTab,
+} from '@/components/notification-types'
 import { RichContent } from '@/components/rich-content'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -41,27 +45,33 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getAnnouncementColorClass } from '@/lib/colors'
+import { isLikelyHtml } from '@/lib/content-format'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
-interface AnnouncementItem {
-  id?: number | string
-  type?: string
-  content?: string
-  extra?: string
-  publishDate?: string | Date
-}
+export type {
+  AnnouncementItem,
+  NotificationTab,
+} from '@/components/notification-types'
 
 interface NotificationPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   unreadCount: number
-  activeTab: 'notice' | 'announcements'
-  onTabChange: (tab: 'notice' | 'announcements') => void
+  activeTab: NotificationTab
+  onTabChange: (tab: NotificationTab) => void
   notice: string
   announcements: AnnouncementItem[]
   loading: boolean
   className?: string
+}
+
+interface NotificationContentProps {
+  activeTab: NotificationTab
+  onTabChange: (tab: NotificationTab) => void
+  notice: string
+  announcements: AnnouncementItem[]
+  loading: boolean
 }
 
 /**
@@ -203,9 +213,16 @@ function NoticeContent({
     )
   }
 
+  const noticeIsHtml = isLikelyHtml(notice)
+
   return (
     <ScrollArea className='h-[min(52vh,28rem)] pr-3'>
-      <RichContent breaks content={notice} />
+      <RichContent
+        breaks={!noticeIsHtml}
+        content={notice}
+        mode={noticeIsHtml ? 'html' : 'markdown'}
+        htmlVariant={noticeIsHtml ? 'isolated' : undefined}
+      />
     </ScrollArea>
   )
 }
@@ -287,6 +304,40 @@ function AnnouncementsContent({
   )
 }
 
+export function NotificationContent(props: NotificationContentProps) {
+  const { t } = useTranslation()
+
+  return (
+    <Tabs
+      value={props.activeTab}
+      onValueChange={props.onTabChange as (value: string) => void}
+    >
+      <TabsList className='grid w-full grid-cols-2'>
+        <TabsTrigger value='notice' className='gap-1.5'>
+          <Bell className='size-3.5' />
+          {t('Notice')}
+        </TabsTrigger>
+        <TabsTrigger value='announcements' className='gap-1.5'>
+          <Megaphone className='size-3.5' />
+          {t('Timeline')}
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value='notice' className='mt-2'>
+        <NoticeContent notice={props.notice} loading={props.loading} t={t} />
+      </TabsContent>
+
+      <TabsContent value='announcements' className='mt-2'>
+        <AnnouncementsContent
+          announcements={props.announcements}
+          loading={props.loading}
+          t={t}
+        />
+      </TabsContent>
+    </Tabs>
+  )
+}
+
 /**
  * Notification popover with Notice and Announcements tabs
  */
@@ -337,33 +388,13 @@ export function NotificationPopover({
           </p>
         </PopoverHeader>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={onTabChange as (value: string) => void}
-        >
-          <TabsList className='grid w-full grid-cols-2'>
-            <TabsTrigger value='notice' className='gap-1.5'>
-              <Bell className='size-3.5' />
-              {t('Notice')}
-            </TabsTrigger>
-            <TabsTrigger value='announcements' className='gap-1.5'>
-              <Megaphone className='size-3.5' />
-              {t('Timeline')}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value='notice' className='mt-2'>
-            <NoticeContent notice={notice} loading={loading} t={t} />
-          </TabsContent>
-
-          <TabsContent value='announcements' className='mt-2'>
-            <AnnouncementsContent
-              announcements={announcements}
-              loading={loading}
-              t={t}
-            />
-          </TabsContent>
-        </Tabs>
+        <NotificationContent
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+          notice={notice}
+          announcements={announcements}
+          loading={loading}
+        />
 
         <div className='flex justify-end'>
           <Button size='sm' onClick={() => onOpenChange(false)}>
