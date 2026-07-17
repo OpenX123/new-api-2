@@ -133,6 +133,11 @@ export interface ManageUserQuotaPayload {
   value: number
 }
 
+export interface BatchAddUserQuotaPayload {
+  ids: number[]
+  value: number
+}
+
 // ============================================================================
 // Dialog Types
 // ============================================================================

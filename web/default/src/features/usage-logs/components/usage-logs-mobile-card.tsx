@@ -214,6 +214,7 @@ function CommonLogsCard<TData>({
           valueClassName='[&_.flex-col]:max-w-none'
         />
         <SummaryField label={t('User')} cell={cells.get('user')} primaryOnly />
+        <SummaryField label={t('IP Address')} cell={cells.get('ip')} />
         <SummaryField
           label={t('Token')}
           cell={cells.get('token_name')}

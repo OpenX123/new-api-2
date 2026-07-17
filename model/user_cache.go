@@ -72,6 +72,17 @@ func InvalidateUserCache(userId int) error {
 	return invalidateUserCache(userId)
 }
 
+func InvalidateUserCaches(userIds []int) error {
+	if !common.RedisEnabled || len(userIds) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(userIds))
+	for _, userId := range userIds {
+		keys = append(keys, getUserCacheKey(userId))
+	}
+	return common.RedisDelKeys(keys...)
+}
+
 func populateUserCache(user User) error {
 	if !common.RedisEnabled {
 		return nil

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -482,6 +483,73 @@ func BatchDeleteUsers(ids []int, operatorRole int) (int, error) {
 	}
 
 	return len(validIds), nil
+}
+
+// BatchIncreaseUserQuota adds the same quota amount to every manageable user.
+// Users at or above the operator's role are skipped.
+func BatchIncreaseUserQuota(ids []int, quota int, operatorRole int) ([]int, error) {
+	if len(ids) == 0 {
+		return nil, errors.New("ids 不能为空！")
+	}
+	if quota <= 0 {
+		return nil, errors.New("quota 必须大于 0！")
+	}
+
+	uniqueIds := make([]int, 0, len(ids))
+	seen := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIds = append(uniqueIds, id)
+	}
+	if len(uniqueIds) == 0 {
+		return nil, errors.New("ids 不能为空！")
+	}
+
+	var updatedIds []int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var users []User
+		if err := tx.Select("id", "role").Where("id IN ?", uniqueIds).Find(&users).Error; err != nil {
+			return err
+		}
+
+		updatedIds = make([]int, 0, len(users))
+		for _, user := range users {
+			if user.Role >= operatorRole || user.Role == common.RoleRootUser {
+				continue
+			}
+			updatedIds = append(updatedIds, user.Id)
+		}
+
+		if len(updatedIds) == 0 {
+			return nil
+		}
+		result := tx.Model(&User{}).
+			Where("id IN ?", updatedIds).
+			Where("role < ?", operatorRole).
+			Where("quota <= ?", math.MaxInt32-quota).
+			Update("quota", gorm.Expr("quota + ?", quota))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != int64(len(updatedIds)) {
+			return fmt.Errorf("one or more user quotas exceed maximum")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := InvalidateUserCaches(updatedIds); err != nil {
+		common.SysLog(fmt.Sprintf("failed to invalidate user caches after batch quota update: %s", err.Error()))
+	}
+	return updatedIds, nil
 }
 
 func inviteUser(inviterId int) (err error) {

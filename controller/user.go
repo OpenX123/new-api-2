@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -939,6 +940,13 @@ type UserBatch struct {
 	Ids []int `json:"ids"`
 }
 
+type UserQuotaBatch struct {
+	Ids   []int `json:"ids"`
+	Value int   `json:"value"`
+}
+
+const maxBatchQuotaUsers = 100
+
 func BatchDeleteUsers(c *gin.Context) {
 	userBatch := UserBatch{}
 	if err := c.ShouldBindJSON(&userBatch); err != nil || len(userBatch.Ids) == 0 {
@@ -955,6 +963,31 @@ func BatchDeleteUsers(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    count,
+	})
+}
+
+func BatchAddUserQuota(c *gin.Context) {
+	var req UserQuotaBatch
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.Ids) == 0 || len(req.Ids) > maxBatchQuotaUsers || req.Value <= 0 || req.Value > math.MaxInt32 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+
+	updatedIds, err := model.BatchIncreaseUserQuota(req.Ids, req.Value, c.GetInt("role"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for _, userId := range updatedIds {
+		recordManageAuditFor(c, userId, "user.quota_add", map[string]interface{}{
+			"quota": logger.LogQuota(req.Value),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    len(updatedIds),
 	})
 }
 
