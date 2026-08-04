@@ -86,6 +86,10 @@ const SECURITY_SECTIONS = [
         defaultValues={{
           'token_setting.max_user_tokens':
             settings['token_setting.max_user_tokens'],
+          'token_setting.client_restriction_enabled':
+            settings['token_setting.client_restriction_enabled'],
+          'token_setting.allowed_client_user_agents':
+            settings['token_setting.allowed_client_user_agents'],
         }}
       />
     ),

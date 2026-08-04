@@ -42,6 +42,9 @@ const defaultSecuritySettings: SecuritySettings = {
   'fetch_setting.allowed_ports': [],
   'fetch_setting.apply_ip_filter_for_domain': false,
   'token_setting.max_user_tokens': 1000,
+  'token_setting.client_restriction_enabled': false,
+  'token_setting.allowed_client_user_agents':
+    'claude-cli,claude-code,codex_cli_rs,codex-cli,opencode,cline,roo-code,roo-cline,continue,aider,cursor,windsurf,zed',
 }
 
 export function SecuritySettings() {

@@ -32,8 +32,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 
-import { SettingsForm } from '../components/settings-form-layout'
+import {
+  SettingsForm,
+  SettingsSwitchContent,
+  SettingsSwitchItem,
+} from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
@@ -41,6 +47,8 @@ import { useUpdateOption } from '../hooks/use-update-option'
 const tokenLimitSchema = z.object({
   token_setting: z.object({
     max_user_tokens: z.number().min(1),
+    client_restriction_enabled: z.boolean(),
+    allowed_client_user_agents: z.string(),
   }),
 })
 
@@ -49,6 +57,8 @@ type TokenLimitFormInput = z.input<typeof tokenLimitSchema>
 
 type NormalizedTokenLimitValues = {
   'token_setting.max_user_tokens': number
+  'token_setting.client_restriction_enabled': boolean
+  'token_setting.allowed_client_user_agents': string
 }
 
 type TokenLimitSectionProps = {
@@ -60,6 +70,10 @@ const buildFormDefaults = (
 ): TokenLimitFormInput => ({
   token_setting: {
     max_user_tokens: defaults['token_setting.max_user_tokens'],
+    client_restriction_enabled:
+      defaults['token_setting.client_restriction_enabled'],
+    allowed_client_user_agents:
+      defaults['token_setting.allowed_client_user_agents'],
   },
 })
 
@@ -67,6 +81,10 @@ const normalizeFormValues = (
   values: TokenLimitFormValues
 ): NormalizedTokenLimitValues => ({
   'token_setting.max_user_tokens': values.token_setting.max_user_tokens,
+  'token_setting.client_restriction_enabled':
+    values.token_setting.client_restriction_enabled,
+  'token_setting.allowed_client_user_agents':
+    values.token_setting.allowed_client_user_agents,
 })
 
 export function TokenLimitSection({ defaultValues }: TokenLimitSectionProps) {
@@ -83,11 +101,15 @@ export function TokenLimitSection({ defaultValues }: TokenLimitSectionProps) {
   }, [defaultValues, form])
 
   const onSubmit = async (values: TokenLimitFormValues) => {
-    const key = 'token_setting.max_user_tokens' as const
     const normalized = normalizeFormValues(values)
-    const value = normalized[key]
-    if (value !== defaultValues[key]) {
-      await updateOption.mutateAsync({ key, value })
+
+    for (const key of Object.keys(normalized) as Array<
+      keyof NormalizedTokenLimitValues
+    >) {
+      const value = normalized[key]
+      if (value !== defaultValues[key]) {
+        await updateOption.mutateAsync({ key, value })
+      }
     }
   }
 
@@ -120,6 +142,50 @@ export function TokenLimitSection({ defaultValues }: TokenLimitSectionProps) {
                 <FormDescription>
                   {t(
                     'Maximum number of tokens each user can create. Default 1000. Setting too large may affect performance.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='token_setting.client_restriction_enabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Restrict API clients')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Only allow relay requests whose User-Agent contains an allowed keyword.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='token_setting.allowed_client_user_agents'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Allowed client User-Agent keywords')}</FormLabel>
+                <FormControl>
+                  <Textarea
+                    rows={4}
+                    placeholder='claude-cli,codex_cli_rs,opencode,cline,aider,cursor'
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Separate keywords with commas or new lines. Matching is case-insensitive. User-Agent can be forged, so this is a compatibility restriction rather than strong authentication.'
                   )}
                 </FormDescription>
                 <FormMessage />

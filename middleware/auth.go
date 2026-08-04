@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -383,6 +384,11 @@ func TokenAuth() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusUnauthorized,
 					common.TranslateMessage(c, i18n.MsgTokenInvalid))
 			}
+			return
+		}
+
+		if c.GetString(RouteTagKey) == "relay" && !operation_setting.IsAllowedRelayClient(c.GetHeader("User-Agent")) {
+			abortWithOpenAiMessage(c, http.StatusForbidden, "仅允许已配置的客户端访问此接口", types.ErrorCodeAccessDenied)
 			return
 		}
 
