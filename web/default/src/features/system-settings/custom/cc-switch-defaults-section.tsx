@@ -50,19 +50,41 @@ import { useUpdateOption } from '../hooks/use-update-option'
 import type { CustomSettings } from '../types'
 
 const ccSwitchDefaultsSchema = z.object({
-  'cc_switch_setting.claude_name': z.string().trim().min(1),
-  'cc_switch_setting.claude_model': z.string(),
-  'cc_switch_setting.claude_haiku_model': z.string(),
-  'cc_switch_setting.claude_sonnet_model': z.string(),
-  'cc_switch_setting.claude_opus_model': z.string(),
-  'cc_switch_setting.codex_name': z.string().trim().min(1),
-  'cc_switch_setting.codex_model': z.string(),
-  'cc_switch_setting.gemini_name': z.string().trim().min(1),
-  'cc_switch_setting.gemini_model': z.string(),
+  cc_switch_setting: z.object({
+    claude_name: z.string().trim().min(1),
+    claude_model: z.string(),
+    claude_haiku_model: z.string(),
+    claude_sonnet_model: z.string(),
+    claude_opus_model: z.string(),
+    codex_name: z.string().trim().min(1),
+    codex_model: z.string(),
+    gemini_name: z.string().trim().min(1),
+    gemini_model: z.string(),
+  }),
 })
 
+type CCSwitchFormValues = z.infer<typeof ccSwitchDefaultsSchema>
+
+function toFormValues(settings: CustomSettings): CCSwitchFormValues {
+  return {
+    cc_switch_setting: {
+      claude_name: settings['cc_switch_setting.claude_name'],
+      claude_model: settings['cc_switch_setting.claude_model'],
+      claude_haiku_model:
+        settings['cc_switch_setting.claude_haiku_model'],
+      claude_sonnet_model:
+        settings['cc_switch_setting.claude_sonnet_model'],
+      claude_opus_model: settings['cc_switch_setting.claude_opus_model'],
+      codex_name: settings['cc_switch_setting.codex_name'],
+      codex_model: settings['cc_switch_setting.codex_model'],
+      gemini_name: settings['cc_switch_setting.gemini_name'],
+      gemini_model: settings['cc_switch_setting.gemini_model'],
+    },
+  }
+}
+
 type CCSwitchFieldProps = {
-  control: Control<CustomSettings>
+  control: Control<CCSwitchFormValues>
   name: keyof CustomSettings
   label: string
   placeholder?: string
@@ -93,20 +115,21 @@ type CCSwitchDefaultsSectionProps = {
 export function CCSwitchDefaultsSection(props: CCSwitchDefaultsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
-  const form = useForm<CustomSettings>({
+  const form = useForm<CCSwitchFormValues>({
     resolver: zodResolver(ccSwitchDefaultsSchema),
     mode: 'onChange',
-    defaultValues: props.defaultValues,
+    defaultValues: toFormValues(props.defaultValues),
   })
 
   useEffect(() => {
-    form.reset(props.defaultValues)
+    form.reset(toFormValues(props.defaultValues))
   }, [form, props.defaultValues])
 
-  const onSubmit = async (values: CustomSettings) => {
-    for (const key of Object.keys(values) as Array<keyof CustomSettings>) {
-      if (values[key] !== props.defaultValues[key]) {
-        await updateOption.mutateAsync({ key, value: values[key] })
+  const onSubmit = async (values: CCSwitchFormValues) => {
+    for (const [field, value] of Object.entries(values.cc_switch_setting)) {
+      const key = `cc_switch_setting.${field}` as keyof CustomSettings
+      if (value !== props.defaultValues[key]) {
+        await updateOption.mutateAsync({ key, value })
       }
     }
   }
@@ -117,7 +140,7 @@ export function CCSwitchDefaultsSection(props: CCSwitchDefaultsSectionProps) {
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            onReset={() => form.reset(props.defaultValues)}
+            onReset={() => form.reset(toFormValues(props.defaultValues))}
             isSaving={updateOption.isPending}
             isResetDisabled={!form.formState.isDirty}
             saveLabel='Save custom configuration'
