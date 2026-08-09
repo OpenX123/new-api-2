@@ -21,6 +21,7 @@ import { createSectionRegistry } from '../utils/section-registry'
 import { AnnouncementsSection } from './announcements-section'
 import { ApiInfoSection } from './api-info-section'
 import { ChatSettingsSection } from './chat-settings-section'
+import { CustomTabsSection } from './custom-tabs-section'
 import { DashboardSection } from './dashboard-section'
 import { DrawingSettingsSection } from './drawing-settings-section'
 import { FAQSection } from './faq-section'
@@ -98,6 +99,13 @@ const CONTENT_SECTIONS = [
     titleKey: 'Chat Presets',
     build: (settings: ContentSettings) => (
       <ChatSettingsSection defaultValue={settings.Chats} />
+    ),
+  },
+  {
+    id: 'custom-tabs',
+    titleKey: 'Custom Tabs',
+    build: (settings: ContentSettings) => (
+      <CustomTabsSection defaultValue={settings.CustomTabs} />
     ),
   },
   {

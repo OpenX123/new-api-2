@@ -23,44 +23,47 @@ import { useServerAddress } from '@/hooks/use-server-address'
 import { useStatus } from '@/hooks/use-status'
 
 import {
-  type ChatPreset,
-  parseChatConfig,
-  type RawChatConfig,
-} from '../lib/chat-links'
+  type CustomTab,
+  parseCustomTabsConfig,
+  type RawCustomTabsConfig,
+} from '../lib/custom-tabs'
 
-function getStoredStatusChats(): RawChatConfig {
+function getStoredStatusCustomTabs(): RawCustomTabsConfig {
   if (typeof window === 'undefined') return undefined
   try {
     const raw = window.localStorage.getItem('status')
     if (!raw) return undefined
     const parsed = JSON.parse(raw)
-    return parsed?.chats ?? parsed?.Chats
+    return parsed?.custom_tabs ?? parsed?.CustomTabs
   } catch {
     return undefined
   }
 }
 
-function extractChats(status: SystemStatus | null): RawChatConfig {
+function extractCustomTabs(status: SystemStatus | null): RawCustomTabsConfig {
   const raw =
-    status?.Chats ?? status?.chats ?? status?.data?.Chats ?? status?.data?.chats
+    status?.CustomTabs ??
+    status?.custom_tabs ??
+    status?.data?.CustomTabs ??
+    status?.data?.custom_tabs
 
-  return (raw as RawChatConfig) ?? getStoredStatusChats()
+  return (raw as RawCustomTabsConfig) ?? getStoredStatusCustomTabs()
 }
 
-export function useChatPresets(): {
-  chatPresets: ChatPreset[]
+export function useCustomTabs(): {
+  customTabs: CustomTab[]
   serverAddress: string
 } {
   const { status } = useStatus()
   const serverAddress = useServerAddress()
 
-  const chatPresets = useMemo(() => {
-    const raw = extractChats(status)
-    return parseChatConfig(raw)
-  }, [status])
+  const customTabs = useMemo(
+    () => parseCustomTabsConfig(extractCustomTabs(status)),
+    [status]
+  )
 
   return {
-    chatPresets,
+    customTabs,
     serverAddress,
   }
 }

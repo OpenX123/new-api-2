@@ -37,6 +37,7 @@ const defaultContentSettings: ContentSettings = {
   DataExportDefaultTime: 'hour',
   DataExportInterval: 5,
   Chats: '[]',
+  CustomTabs: '[]',
   DrawingEnabled: false,
   MjNotifyEnabled: false,
   MjAccountFilterEnabled: false,

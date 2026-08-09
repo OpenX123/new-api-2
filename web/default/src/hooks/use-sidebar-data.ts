@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Activity,
+  AppWindow,
   Box,
   CreditCard,
   FileText,
@@ -64,6 +65,11 @@ export function useSidebarData(): SidebarData {
             title: t('Chat'),
             icon: MessageSquare,
             type: 'chat-presets',
+          },
+          {
+            title: t('Custom Tabs'),
+            icon: AppWindow,
+            type: 'custom-tabs',
           },
         ],
       },

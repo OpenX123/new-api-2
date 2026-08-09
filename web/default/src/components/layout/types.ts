@@ -64,9 +64,22 @@ export type NavChatPresets = BaseNavItem & {
 }
 
 /**
+ * Dynamic custom tabs type - admin-configured pages embedded as iframes
+ */
+export type NavCustomTabs = BaseNavItem & {
+  type: 'custom-tabs'
+  url?: never
+  items?: never
+}
+
+/**
  * Navigation item union type
  */
-export type NavItem = NavCollapsible | NavLink | NavChatPresets
+export type NavItem =
+  | NavCollapsible
+  | NavLink
+  | NavChatPresets
+  | NavCustomTabs
 
 /**
  * Navigation group type - a group of navigation items in sidebar

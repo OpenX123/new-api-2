@@ -29,6 +29,37 @@ function getServerAddress(): string {
   return window.location.origin
 }
 
+export type CCSwitchApp = 'claude' | 'codex' | 'gemini'
+
+const DEFAULT_NAMES: Record<CCSwitchApp, string> = {
+  claude: 'My Claude',
+  codex: 'My Codex',
+  gemini: 'My Gemini',
+}
+
+export function resolveCCSwitchDefaults(app: CCSwitchApp, raw: unknown) {
+  const settings =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const getString = (key: string) => {
+    const value = settings[key]
+    return typeof value === 'string' ? value.trim() : ''
+  }
+  const models: Record<string, string> = {
+    model: getString(`${app}_model`),
+  }
+
+  if (app === 'claude') {
+    models.haikuModel = getString('claude_haiku_model')
+    models.sonnetModel = getString('claude_sonnet_model')
+    models.opusModel = getString('claude_opus_model')
+  }
+
+  return {
+    name: getString(`${app}_name`) || DEFAULT_NAMES[app],
+    models,
+  }
+}
+
 export function buildCCSwitchImportURL(
   app: string,
   name: string,

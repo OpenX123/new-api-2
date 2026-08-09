@@ -51,10 +51,12 @@ import { checkIsActive } from '../lib/url-utils'
 import {
   type NavCollapsible,
   type NavChatPresets,
+  type NavCustomTabs,
   type NavLink,
   type NavGroup as NavGroupProps,
 } from '../types'
 import { ChatPresetsItem } from './chat-presets-item'
+import { CustomTabsItem } from './custom-tabs-item'
 
 /**
  * Sidebar navigation group component
@@ -76,6 +78,11 @@ export function NavGroup({ title, items }: NavGroupProps) {
           // Special handling: dynamic chat presets list
           if (item.type === 'chat-presets') {
             return <ChatPresetsItem key={key} item={item as NavChatPresets} />
+          }
+
+          // Special handling: admin-configured embedded custom tabs
+          if (item.type === 'custom-tabs') {
+            return <CustomTabsItem key={key} item={item as NavCustomTabs} />
           }
 
           // If no sub-items, render regular link

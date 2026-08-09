@@ -17,18 +17,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { ChevronRight } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import { ComboboxInput } from '@/components/ui/combobox-input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { useStatus } from '@/hooks/use-status'
 import { getUserModels } from '@/lib/api'
 
-import { buildCCSwitchImportURL } from './cc-switch'
+import { buildCCSwitchImportURL, resolveCCSwitchDefaults } from './cc-switch'
 
 const APP_CONFIGS = {
   claude: {
@@ -67,6 +74,8 @@ export function CCSwitchDialog(props: Props) {
   const [app, setApp] = useState<AppType>('claude')
   const [name, setName] = useState<string>(APP_CONFIGS.claude.defaultName)
   const [models, setModels] = useState<Record<string, string>>({})
+  const { status } = useStatus()
+  const configuredDefaults = status?.cc_switch_defaults
 
   const { data: modelsData } = useQuery({
     queryKey: ['user-models-ccswitch'],
@@ -82,22 +91,33 @@ export function CCSwitchDialog(props: Props) {
 
   useEffect(() => {
     if (props.open) {
+      const defaults = resolveCCSwitchDefaults(
+        props.initialApp,
+        configuredDefaults
+      )
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setModels({})
+      setModels(defaults.models)
 
       setApp(props.initialApp)
 
-      setName(APP_CONFIGS[props.initialApp].defaultName)
+      setName(defaults.name)
     }
-  }, [props.initialApp, props.open])
+  }, [configuredDefaults, props.initialApp, props.open])
 
   const currentConfig = APP_CONFIGS[app]
+  const primaryFields = currentConfig.modelFields.filter(
+    (field) => field.required
+  )
+  const optionalFields = currentConfig.modelFields.filter(
+    (field) => !field.required
+  )
 
   const handleAppChange = (val: string) => {
     const appVal = val as AppType
+    const defaults = resolveCCSwitchDefaults(appVal, configuredDefaults)
     setApp(appVal)
-    setName(APP_CONFIGS[appVal].defaultName)
-    setModels({})
+    setName(defaults.name)
+    setModels(defaults.models)
   }
 
   const handleSubmit = () => {
@@ -168,7 +188,7 @@ export function CCSwitchDialog(props: Props) {
           />
         </div>
 
-        {currentConfig.modelFields.map((field) => (
+        {primaryFields.map((field) => (
           <div key={field.key} className='space-y-2'>
             <Label>
               {t(field.labelKey)}
@@ -187,6 +207,39 @@ export function CCSwitchDialog(props: Props) {
             />
           </div>
         ))}
+
+        {optionalFields.length > 0 && (
+          <Collapsible className='space-y-4'>
+            <CollapsibleTrigger
+              render={
+                <Button
+                  type='button'
+                  variant='outline'
+                  className='group/advanced-trigger w-full justify-between'
+                />
+              }
+            >
+              {t('Advanced model mappings')}
+              <ChevronRight className='size-4 transition-transform group-data-[panel-open]/advanced-trigger:rotate-90' />
+            </CollapsibleTrigger>
+            <CollapsibleContent className='space-y-4'>
+              {optionalFields.map((field) => (
+                <div key={field.key} className='space-y-2'>
+                  <Label>{t(field.labelKey)}</Label>
+                  <ComboboxInput
+                    options={modelOptions}
+                    value={models[field.key] || ''}
+                    onValueChange={(v) =>
+                      setModels((prev) => ({ ...prev, [field.key]: v }))
+                    }
+                    placeholder={t('Select or enter model name')}
+                    emptyText={t('No models found')}
+                  />
+                </div>
+              ))}
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
     </Dialog>
   )

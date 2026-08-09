@@ -178,12 +178,25 @@ export type ContentSettings = {
   DataExportDefaultTime: string
   DataExportInterval: number
   Chats: string
+  CustomTabs: string
   DrawingEnabled: boolean
   MjNotifyEnabled: boolean
   MjAccountFilterEnabled: boolean
   MjForwardUrlEnabled: boolean
   MjModeClearEnabled: boolean
   MjActionCheckSuccessEnabled: boolean
+}
+
+export type CustomSettings = {
+  'cc_switch_setting.claude_name': string
+  'cc_switch_setting.claude_model': string
+  'cc_switch_setting.claude_haiku_model': string
+  'cc_switch_setting.claude_sonnet_model': string
+  'cc_switch_setting.claude_opus_model': string
+  'cc_switch_setting.codex_name': string
+  'cc_switch_setting.codex_model': string
+  'cc_switch_setting.gemini_name': string
+  'cc_switch_setting.gemini_model': string
 }
 
 export type ModelSettings = {
@@ -379,6 +392,8 @@ export type SecuritySettings = {
   'fetch_setting.allowed_ports': number[]
   'fetch_setting.apply_ip_filter_for_domain': boolean
   'token_setting.max_user_tokens': number
+  'token_setting.client_restriction_enabled': boolean
+  'token_setting.allowed_client_user_agents': string
 }
 
 export type UpstreamChannel = {
