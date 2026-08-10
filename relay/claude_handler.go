@@ -112,6 +112,11 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		info.UpstreamModelName = request.Model
 	}
+	if !model_setting.GetGlobalSettings().PassThroughRequestEnabled && !info.ChannelSetting.PassThroughBodyEnabled {
+		if effort := request.GetEfforts(); effort != "" {
+			info.SetReasoningEffort(effort)
+		}
+	}
 
 	// 若历史 assistant tool_use 不含 thinking 块,则移除客户端/本轮自动注入的 thinking,
 	// 防止 Anthropic 返回 "thinking is enabled but reasoning_content is missing ..." 400。
