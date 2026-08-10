@@ -476,9 +476,10 @@ func extractVisualFactsFromChannel(
 	httpResponse, err := doVisionRequestWithRetry(
 		visionCtx,
 		func() (io.Reader, io.Closer, error) {
-			body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
+			body, size, getBody, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
 			if bodyErr == nil {
 				visionInfo.UpstreamRequestBodySize = size
+				visionInfo.UpstreamRequestGetBody = getBody
 			}
 			return body, closer, bodyErr
 		},
