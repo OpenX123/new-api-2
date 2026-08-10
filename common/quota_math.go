@@ -1,6 +1,16 @@
 package common
 
-import "math"
+import (
+	"fmt"
+	"math"
+
+	"github.com/shopspring/decimal"
+)
+
+const (
+	MaxQuota = math.MaxInt32
+	MinQuota = math.MinInt32
+)
 
 // QuotaFromFloat converts a computed quota value to int with saturation.
 // Quota products can include user-controlled multipliers (image n, video
@@ -23,5 +33,14 @@ func QuotaFromFloat(value float64) int {
 // QuotaFromDecimalStrict converts an in-range decimal quota and rejects a
 // value that would otherwise be saturated at the database's int32 boundary.
 func QuotaFromDecimalStrict(d decimal.Decimal) (int, error) {
-	return strictQuota(QuotaFromDecimalChecked(d))
+	value, _ := d.Round(0).Float64()
+	if value >= math.MaxInt32 || value <= math.MinInt32 {
+		return 0, fmt.Errorf("quota conversion overflow: %s", d.String())
+	}
+	return QuotaFromFloat(value), nil
+}
+
+func QuotaFromDecimal(d decimal.Decimal) int {
+	value, _ := d.Round(0).Float64()
+	return QuotaFromFloat(value)
 }
