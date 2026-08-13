@@ -340,6 +340,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	createdAt := common.GetTimestamp()
+	if userAgent := c.Request.UserAgent(); userAgent != "" {
+		if params.Other == nil {
+			params.Other = map[string]interface{}{}
+		}
+		params.Other["user_agent"] = userAgent
+	}
 	otherStr := common.MapToJsonStr(params.Other)
 	log := &Log{
 		UserId:            userId,

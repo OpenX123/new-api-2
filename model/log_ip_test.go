@@ -65,3 +65,15 @@ func TestRecordUsageLogsAlwaysStoreClientIP(t *testing.T) {
 	assert.Equal(t, "198.51.100.7", logs[0].Ip)
 	assert.Equal(t, "198.51.100.7", logs[1].Ip)
 }
+
+func TestRecordConsumeLogStoresUserAgent(t *testing.T) {
+	setupLogIPTestDB(t)
+	c := newLogIPTestContext("198.51.100.8")
+	c.Request.Header.Set("User-Agent", "Codex Desktop/0.147.0")
+
+	RecordConsumeLog(c, 1, RecordConsumeLogParams{Other: map[string]interface{}{"existing": true}})
+
+	var log Log
+	require.NoError(t, LOG_DB.First(&log).Error)
+	assert.JSONEq(t, `{"existing":true,"user_agent":"Codex Desktop/0.147.0"}`, log.Other)
+}
