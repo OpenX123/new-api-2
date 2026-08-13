@@ -331,6 +331,51 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+const maxLoggedRequestBodyBytes = 64 << 10
+
+func requestBodyForLog(c *gin.Context) interface{} {
+	storage, err := common.GetBodyStorage(c)
+	if err != nil || storage.Size() == 0 {
+		return nil
+	}
+	if storage.Size() > maxLoggedRequestBodyBytes {
+		return fmt.Sprintf("[请求体超过 64KB，未记录；原始大小 %d 字节]", storage.Size())
+	}
+	body, err := storage.Bytes()
+	if err != nil {
+		return nil
+	}
+	var value interface{}
+	if err := common.Unmarshal(body, &value); err != nil {
+		return "[非 JSON 请求体，未记录]"
+	}
+	return redactRequestBody(value)
+}
+
+func redactRequestBody(value interface{}) interface{} {
+	switch value := value.(type) {
+	case map[string]interface{}:
+		for key, item := range value {
+			lower := strings.ToLower(key)
+			if lower == "api_key" || lower == "authorization" || lower == "access_token" || lower == "refresh_token" || lower == "token" || strings.Contains(lower, "password") || strings.Contains(lower, "secret") {
+				value[key] = "[已隐藏]"
+			} else {
+				value[key] = redactRequestBody(item)
+			}
+		}
+	case []interface{}:
+		for i, item := range value {
+			value[i] = redactRequestBody(item)
+		}
+	case string:
+		runes := []rune(value)
+		if len(runes) > 4096 {
+			return fmt.Sprintf("%s…[省略 %d 字符]", string(runes[:4096]), len(runes)-4096)
+		}
+	}
+	return value
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
@@ -345,6 +390,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			params.Other = map[string]interface{}{}
 		}
 		params.Other["user_agent"] = userAgent
+	}
+	if requestBody := requestBodyForLog(c); requestBody != nil {
+		if params.Other == nil {
+			params.Other = map[string]interface{}{}
+		}
+		params.Other["request_body"] = requestBody
 	}
 	otherStr := common.MapToJsonStr(params.Other)
 	log := &Log{

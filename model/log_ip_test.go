@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -69,11 +70,14 @@ func TestRecordUsageLogsAlwaysStoreClientIP(t *testing.T) {
 func TestRecordConsumeLogStoresUserAgent(t *testing.T) {
 	setupLogIPTestDB(t)
 	c := newLogIPTestContext("198.51.100.8")
+	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"api_key":"secret"}`))
+	c.Request.RemoteAddr = "198.51.100.8:12345"
+	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("User-Agent", "Codex Desktop/0.147.0")
 
 	RecordConsumeLog(c, 1, RecordConsumeLogParams{Other: map[string]interface{}{"existing": true}})
 
 	var log Log
 	require.NoError(t, LOG_DB.First(&log).Error)
-	assert.JSONEq(t, `{"existing":true,"user_agent":"Codex Desktop/0.147.0"}`, log.Other)
+	assert.JSONEq(t, `{"existing":true,"user_agent":"Codex Desktop/0.147.0","request_body":{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"api_key":"[已隐藏]"}}`, log.Other)
 }
