@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -331,6 +332,7 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+const maxRequestBodyAuditSourceBytes = 1 << 20
 const maxLoggedRequestBodyBytes = 64 << 10
 
 func requestBodyForLog(c *gin.Context) interface{} {
@@ -338,8 +340,8 @@ func requestBodyForLog(c *gin.Context) interface{} {
 	if err != nil || storage.Size() == 0 {
 		return nil
 	}
-	if storage.Size() > maxLoggedRequestBodyBytes {
-		return fmt.Sprintf("[请求体超过 64KB，未记录；原始大小 %d 字节]", storage.Size())
+	if storage.Size() > maxRequestBodyAuditSourceBytes {
+		return fmt.Sprintf("[请求体超过 1MB，未记录；原始大小 %d 字节]", storage.Size())
 	}
 	body, err := storage.Bytes()
 	if err != nil {
@@ -349,7 +351,16 @@ func requestBodyForLog(c *gin.Context) interface{} {
 	if err := common.Unmarshal(body, &value); err != nil {
 		return "[非 JSON 请求体，未记录]"
 	}
-	return redactRequestBody(value)
+	value = redactRequestBody(value)
+	encoded, err := common.Marshal(value)
+	if err != nil || len(encoded) <= maxLoggedRequestBodyBytes {
+		return value
+	}
+	truncated := encoded[:maxLoggedRequestBodyBytes]
+	for len(truncated) > 0 && !utf8.Valid(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return string(truncated) + "\n…[脱敏后的请求体已截断至 64KB]"
 }
 
 func redactRequestBody(value interface{}) interface{} {
