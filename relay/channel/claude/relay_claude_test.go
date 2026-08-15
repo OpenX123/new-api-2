@@ -14,6 +14,15 @@ func commonPointer[T any](value T) *T {
 	return &value
 }
 
+func TestRequestOpenAI2ClaudeMessageOmitsEmptyTools(t *testing.T) {
+	request, err := RequestOpenAI2ClaudeMessage(nil, dto.GeneralOpenAIRequest{
+		Model:    "claude-test",
+		Messages: []dto.Message{{Role: "user", Content: "hi"}},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, request.Tools)
+}
+
 func TestResponseOpenAI2ClaudeToolUseInputIsObject(t *testing.T) {
 	tests := []struct {
 		name string
