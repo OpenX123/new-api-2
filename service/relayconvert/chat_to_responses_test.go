@@ -4,11 +4,26 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestChatCompletionsRequestToResponsesRequestPreservesPromptCacheKey(t *testing.T) {
+	key := "session-\"quoted\"\\path\n世界"
+	got, err := ChatCompletionsRequestToResponsesRequest(&dto.GeneralOpenAIRequest{
+		Model:          "gpt-test",
+		Messages:       []dto.Message{{Role: "user", Content: "hello"}},
+		PromptCacheKey: key,
+	})
+	require.NoError(t, err)
+
+	want, err := common.Marshal(key)
+	require.NoError(t, err)
+	assert.Equal(t, json.RawMessage(want), got.PromptCacheKey)
+}
 
 func TestChatCompletionsRequestToResponsesRequestPreservesPenalties(t *testing.T) {
 	tests := []struct {
