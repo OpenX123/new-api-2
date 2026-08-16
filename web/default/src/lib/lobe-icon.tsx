@@ -25,7 +25,101 @@ For commercial licensing, please contact support@quantumnous.com
  * - Chained properties: "OpenAI.Avatar.type={'platform'}"
  * - Size parameter: getLobeIcon("OpenAI", 20)
  */
-import * as LobeIcons from '@lobehub/icons'
+import {
+  Ai360,
+  Aws,
+  Azure,
+  Baichuan,
+  Baidu,
+  Claude,
+  Cloudflare,
+  Cohere,
+  Coze,
+  DeepSeek,
+  Dify,
+  Doubao,
+  FastGPT,
+  Gemini,
+  Google,
+  Grok,
+  Hunyuan,
+  InternLM,
+  Jina,
+  Jimeng,
+  Kling,
+  LobeHub,
+  Meta,
+  Midjourney,
+  Minimax,
+  Mistral,
+  Moonshot,
+  NewAPI,
+  Ollama,
+  OpenAI,
+  OpenRouter,
+  Perplexity,
+  Qwen,
+  Replicate,
+  SiliconCloud,
+  Spark,
+  Stepfun,
+  Suno,
+  Vidu,
+  Volcengine,
+  Wenxin,
+  XAI,
+  Xinference,
+  Yi,
+  Zhipu,
+} from '@lobehub/icons'
+
+const LOBE_ICONS: Record<string, unknown> = {
+  Ai360,
+  Aws,
+  Azure,
+  Baichuan,
+  Baidu,
+  Claude,
+  Cloudflare,
+  Cohere,
+  Coze,
+  DeepSeek,
+  Dify,
+  Doubao,
+  FastGPT,
+  Gemini,
+  Google,
+  Grok,
+  Hunyuan,
+  InternLM,
+  Jina,
+  Jimeng,
+  Kling,
+  LobeHub,
+  Meta,
+  Midjourney,
+  Minimax,
+  Mistral,
+  Moonshot,
+  NewAPI,
+  Ollama,
+  OpenAI,
+  OpenRouter,
+  Perplexity,
+  Qwen,
+  Replicate,
+  SiliconCloud,
+  Spark,
+  Stepfun,
+  Suno,
+  Vidu,
+  Volcengine,
+  Wenxin,
+  XAI,
+  Xinference,
+  Yi,
+  Zhipu,
+}
 
 /**
  * Parse a property value from string to appropriate type
@@ -102,9 +196,7 @@ export function getLobeIcon(
   // Parse component path and chained properties
   const segments = trimmedName.split('.')
   const baseKey = segments[0]
-  const BaseIcon = (LobeIcons as Record<string, unknown>)[baseKey] as
-    | Record<string, unknown>
-    | undefined
+  const BaseIcon = LOBE_ICONS[baseKey] as Record<string, unknown> | undefined
 
   let IconComponent: React.ComponentType<Record<string, unknown>> | undefined
   let propStartIndex: number
@@ -115,7 +207,7 @@ export function getLobeIcon(
     >
     propStartIndex = 2
   } else {
-    IconComponent = (LobeIcons as Record<string, unknown>)[baseKey] as
+    IconComponent = LOBE_ICONS[baseKey] as
       | React.ComponentType<Record<string, unknown>>
       | undefined
     propStartIndex = segments.length > 1 && /^[A-Z]/.test(segments[1]) ? 2 : 1

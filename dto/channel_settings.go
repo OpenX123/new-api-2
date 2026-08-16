@@ -51,6 +51,85 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
+	VisionBridge                          *VisionBridgeConfig   `json:"vision_bridge,omitempty"`
+}
+
+type VisionBridgeConfig struct {
+	ModelMap           map[string]string `json:"model_map,omitempty"`
+	ChannelId          int               `json:"channel_id,omitempty"`
+	FallbackChannelIds []int             `json:"fallback_channel_ids,omitempty"`
+	TTFTTimeoutMs      int               `json:"ttft_timeout_ms,omitempty"`
+	AttemptTimeoutMs   int               `json:"attempt_timeout_ms,omitempty"`
+	ServiceTier        string            `json:"service_tier,omitempty"`
+}
+
+func (c *VisionBridgeConfig) Resolve(modelName string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	model, ok := c.ModelMap[strings.TrimSpace(modelName)]
+	model = strings.TrimSpace(model)
+	return model, ok && model != ""
+}
+
+func (c *VisionBridgeConfig) TimeoutMs() int {
+	if c == nil || c.TTFTTimeoutMs == 0 {
+		return 10000
+	}
+	return c.TTFTTimeoutMs
+}
+
+func (c *VisionBridgeConfig) ChannelIds() []int {
+	if c == nil || c.ChannelId <= 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(c.FallbackChannelIds)+1)
+	ids = append(ids, c.ChannelId)
+	ids = append(ids, c.FallbackChannelIds...)
+	return ids
+}
+
+func (c *VisionBridgeConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+	if c.ChannelId <= 0 {
+		return fmt.Errorf("vision_bridge.channel_id must be positive")
+	}
+	if len(c.FallbackChannelIds) > 1 {
+		return fmt.Errorf("vision_bridge.fallback_channel_ids supports at most one fallback channel")
+	}
+	seen := map[int]bool{c.ChannelId: true}
+	for _, channelId := range c.FallbackChannelIds {
+		if channelId <= 0 || seen[channelId] {
+			return fmt.Errorf("vision_bridge.fallback_channel_ids must contain unique positive IDs different from channel_id")
+		}
+		seen[channelId] = true
+	}
+	if len(c.ModelMap) == 0 {
+		return fmt.Errorf("vision_bridge.model_map must not be empty")
+	}
+	for source, target := range c.ModelMap {
+		if source == "" || target == "" || source != strings.TrimSpace(source) || target != strings.TrimSpace(target) {
+			return fmt.Errorf("vision_bridge.model_map keys and values must be trimmed and non-empty")
+		}
+	}
+	if c.TTFTTimeoutMs != 0 && (c.TTFTTimeoutMs < 1000 || c.TTFTTimeoutMs > 60000) {
+		return fmt.Errorf("vision_bridge.ttft_timeout_ms must be between 1000 and 60000")
+	}
+	if c.AttemptTimeoutMs != 0 && (c.AttemptTimeoutMs < 1000 || c.AttemptTimeoutMs > 60000) {
+		return fmt.Errorf("vision_bridge.attempt_timeout_ms must be between 1000 and 60000")
+	}
+	if len(c.FallbackChannelIds) > 0 && (c.TTFTTimeoutMs == 0 || c.AttemptTimeoutMs == 0) {
+		return fmt.Errorf("vision_bridge.ttft_timeout_ms and attempt_timeout_ms are required when a fallback channel is configured")
+	}
+	if len(c.FallbackChannelIds) > 0 && c.AttemptTimeoutMs >= c.TimeoutMs() {
+		return fmt.Errorf("vision_bridge.attempt_timeout_ms must be less than ttft_timeout_ms when fallbacks are configured")
+	}
+	if c.ServiceTier != "" && c.ServiceTier != "standard" && c.ServiceTier != "priority" {
+		return fmt.Errorf("vision_bridge.service_tier must be standard or priority")
+	}
+	return nil
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

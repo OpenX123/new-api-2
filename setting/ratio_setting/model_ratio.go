@@ -24,6 +24,9 @@ const (
 // 1 === ￥0.014 / 1k tokens
 
 var defaultModelRatio = map[string]float64{
+	// MiniMax-M3 standard tier; the vision bridge applies the priority multiplier.
+	"MiniMax-M3": 0.2,
+	"minimax-m3": 0.2,
 	//"midjourney":                50,
 	"gpt-4-gizmo-*":                             15,
 	"gpt-4o-gizmo-*":                            2.5,
@@ -322,6 +325,8 @@ var modelRatioMap = types.NewRWMap[string, float64]()
 var completionRatioMap = types.NewRWMap[string, float64]()
 
 var defaultCompletionRatio = map[string]float64{
+	"MiniMax-M3":     4,
+	"minimax-m3":     4,
 	"gpt-4-gizmo-*":  2,
 	"gpt-4o-gizmo-*": 3,
 	"gpt-4-all":      2,

@@ -74,6 +74,10 @@ func TestReplaceResponseModelVariants(t *testing.T) {
 	nestedResult := ReplaceResponseModelStr(nestedJSON, info)
 	require.Equal(t, "alias-model", gjson.Get(nestedResult, "response.model").String())
 
+	messageJSON := `{"type":"message_start","message":{"id":"msg_1","model":"real-model"}}`
+	messageResult := ReplaceResponseModel([]byte(messageJSON), info)
+	require.Equal(t, "alias-model", gjson.GetBytes(messageResult, "message.model").String())
+
 	unrelatedJSON := `{"type":"response.output_text.delta","delta":"hello"}`
 	unrelatedResult := ReplaceResponseModelStr(unrelatedJSON, info)
 	require.Equal(t, unrelatedJSON, unrelatedResult)

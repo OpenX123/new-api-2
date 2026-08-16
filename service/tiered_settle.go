@@ -105,10 +105,9 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 
 	tr, err := billingexpr.ComputeTieredQuotaWithRequest(snap, params, requestInput)
 	if err != nil {
-		quota = relayInfo.FinalPreConsumedQuota
-		if quota <= 0 {
-			quota = snap.EstimatedQuotaAfterGroup
-		}
+		// FinalPreConsumedQuota may include separately reserved components such
+		// as vision. The frozen snapshot is this model's own estimate.
+		quota = snap.EstimatedQuotaAfterGroup
 		return true, quota, nil
 	}
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -182,7 +183,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	summary.PromptTokens = usage.PromptTokens
 	summary.CompletionTokens = usage.CompletionTokens
-	summary.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	summary.TotalTokens = common.QuotaFromFloat(float64(usage.PromptTokens) + float64(usage.CompletionTokens))
 	summary.CacheTokens = usage.PromptTokensDetails.CachedTokens
 	summary.CacheCreationTokens = usage.PromptTokensDetails.CachedCreationTokens
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
@@ -325,6 +326,284 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 	return "openai"
 }
 
+// CalculateVisionActualQuota computes the vision preflight charge without
+// mutating its Usage or any database state. An application-level facts cache
+// hit is free; cache usage reported by the vision upstream follows its price.
+func CalculateVisionActualQuota(component *relaycommon.VisionBillingComponent) (int, *billingexpr.TieredResult, error) {
+	if component == nil {
+		return 0, nil, nil
+	}
+	if len(component.Components) > 0 {
+		total := 0
+		var batchErr error
+		for _, child := range component.Components {
+			quota, _, err := CalculateVisionActualQuota(child)
+			total = common.QuotaFromFloat(float64(total) + float64(quota))
+			if err != nil && batchErr == nil {
+				batchErr = err
+			}
+		}
+		return total, nil, batchErr
+	}
+	if component.CacheHit {
+		return 0, nil, nil
+	}
+	fallbackQuota := component.EstimatedQuota
+	if fallbackQuota < 0 {
+		fallbackQuota = 0
+	}
+	if component.Usage == nil {
+		return fallbackQuota, nil, nil
+	}
+
+	usage := *component.Usage
+
+	if snap := component.TieredBillingSnapshot; snap != nil && snap.BillingMode == "tiered_expr" {
+		requestInput := billingexpr.RequestInput{}
+		if component.BillingRequestInput != nil {
+			requestInput = *component.BillingRequestInput
+		}
+		usedVars := billingexpr.UsedVars(snap.ExprString)
+		params := BuildTieredTokenParams(&usage, usage.UsageSemantic == "anthropic", usedVars)
+		result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, params, requestInput)
+		if err != nil {
+			return fallbackQuota, nil, err
+		}
+		if result.ActualQuotaAfterGroup < 0 {
+			result.ActualQuotaAfterGroup = 0
+		}
+		return result.ActualQuotaAfterGroup, &result, nil
+	}
+
+	promptTokens := usage.PromptTokens
+	completionTokens := usage.CompletionTokens
+	imageTokens := usage.PromptTokensDetails.ImageTokens
+	cacheTokens := usage.PromptTokensDetails.CachedTokens
+	if cacheTokens == 0 && usage.PromptCacheHitTokens > 0 {
+		cacheTokens = usage.PromptCacheHitTokens
+	}
+	cacheCreationTokens := usage.PromptTokensDetails.CachedCreationTokens
+	cacheCreation5mTokens := usage.ClaudeCacheCreation5mTokens
+	cacheCreation1hTokens := usage.ClaudeCacheCreation1hTokens
+	if promptTokens < 0 {
+		promptTokens = 0
+	}
+	if completionTokens < 0 {
+		completionTokens = 0
+	}
+	if imageTokens < 0 {
+		imageTokens = 0
+	}
+	if cacheTokens < 0 {
+		cacheTokens = 0
+	}
+	if cacheCreationTokens < 0 {
+		cacheCreationTokens = 0
+	}
+	if cacheCreation5mTokens < 0 {
+		cacheCreation5mTokens = 0
+	}
+	if cacheCreation1hTokens < 0 {
+		cacheCreation1hTokens = 0
+	}
+	if promptTokens == 0 && completionTokens == 0 {
+		return 0, nil, nil
+	}
+	if component.PriceData.FreeModel {
+		return 0, nil, nil
+	}
+
+	priceData := component.PriceData
+	groupRatio := decimal.NewFromFloat(priceData.GroupRatioInfo.GroupRatio)
+	var quota decimal.Decimal
+	if priceData.UsePrice {
+		quota = decimal.NewFromFloat(priceData.ModelPrice).
+			Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
+			Mul(groupRatio)
+	} else {
+		promptTokenCount := decimal.NewFromInt(int64(promptTokens))
+		imageTokenCount := decimal.NewFromInt(int64(imageTokens))
+		cacheTokenCount := decimal.NewFromInt(int64(cacheTokens))
+		cacheCreationTokenCount := decimal.NewFromInt(int64(cacheCreationTokens))
+		cacheCreation5mTokenCount := decimal.NewFromInt(int64(cacheCreation5mTokens))
+		cacheCreation1hTokenCount := decimal.NewFromInt(int64(cacheCreation1hTokens))
+		basePromptTokens := promptTokenCount.Sub(imageTokenCount)
+		if usage.UsageSemantic != "anthropic" {
+			basePromptTokens = basePromptTokens.Sub(cacheTokenCount).Sub(cacheCreationTokenCount)
+		}
+		if basePromptTokens.IsNegative() {
+			basePromptTokens = decimal.Zero
+		}
+		promptQuota := basePromptTokens.
+			Add(imageTokenCount.Mul(decimal.NewFromFloat(priceData.ImageRatio))).
+			Add(cacheTokenCount.Mul(decimal.NewFromFloat(priceData.CacheRatio)))
+		if usage.UsageSemantic == "anthropic" {
+			splitCacheCreationTokens := cacheCreation5mTokenCount.Add(cacheCreation1hTokenCount)
+			if cacheCreationTokenCount.LessThan(splitCacheCreationTokens) {
+				cacheCreationTokenCount = splitCacheCreationTokens
+			}
+			promptQuota = promptQuota.
+				Add(cacheCreationTokenCount.Sub(splitCacheCreationTokens).Mul(decimal.NewFromFloat(priceData.CacheCreationRatio))).
+				Add(cacheCreation5mTokenCount.Mul(decimal.NewFromFloat(priceData.CacheCreation5mRatio))).
+				Add(cacheCreation1hTokenCount.Mul(decimal.NewFromFloat(priceData.CacheCreation1hRatio)))
+		} else {
+			promptQuota = promptQuota.Add(cacheCreationTokenCount.Mul(decimal.NewFromFloat(priceData.CacheCreationRatio)))
+		}
+		completionQuota := decimal.NewFromInt(int64(completionTokens)).
+			Mul(decimal.NewFromFloat(priceData.CompletionRatio))
+		quota = promptQuota.Add(completionQuota).
+			Mul(decimal.NewFromFloat(priceData.ModelRatio)).
+			Mul(groupRatio)
+	}
+	for _, otherRatio := range priceData.OtherRatios {
+		quota = quota.Mul(decimal.NewFromFloat(otherRatio))
+	}
+	actualQuota := decimalToQuota(quota)
+	if actualQuota < 0 {
+		actualQuota = 0
+	}
+	if !priceData.UsePrice && priceData.ModelRatio*priceData.GroupRatioInfo.GroupRatio != 0 && actualQuota == 0 {
+		actualQuota = 1
+	}
+	return actualQuota, nil, nil
+}
+
+func mergedTextVisionQuota(textQuota, visionQuota int) int {
+	if textQuota < 0 {
+		textQuota = 0
+	}
+	if visionQuota < 0 {
+		visionQuota = 0
+	}
+	return common.QuotaFromFloat(float64(textQuota) + float64(visionQuota))
+}
+
+func appendVisionBillingInfo(other map[string]interface{}, component *relaycommon.VisionBillingComponent, tieredResult *billingexpr.TieredResult) {
+	if component == nil || other == nil {
+		return
+	}
+	usage := component.Usage
+	vision := map[string]interface{}{
+		"channel_id":      component.ChannelId,
+		"failover_count":  component.FailoverCount,
+		"model":           component.ModelName,
+		"alias":           component.VisionAlias,
+		"estimated_quota": component.EstimatedQuota,
+		"actual_quota":    component.ActualQuota,
+		"latency_ms":      component.LatencyMs,
+		"cache_hit":       component.CacheHit,
+		"image_count":     component.ImageCount,
+		"price": map[string]interface{}{
+			"use_price":        component.PriceData.UsePrice,
+			"model_price":      component.PriceData.ModelPrice,
+			"model_ratio":      component.PriceData.ModelRatio,
+			"completion_ratio": component.PriceData.CompletionRatio,
+			"group_ratio":      component.PriceData.GroupRatioInfo.GroupRatio,
+		},
+	}
+	if len(component.AttemptedChannelIds) > 0 {
+		vision["attempted_channel_ids"] = component.AttemptedChannelIds
+	}
+	if usage != nil {
+		vision["prompt_tokens"] = usage.PromptTokens
+		vision["completion_tokens"] = usage.CompletionTokens
+		vision["total_tokens"] = common.QuotaFromFloat(float64(usage.PromptTokens) + float64(usage.CompletionTokens))
+	} else if len(component.Components) > 0 {
+		promptTokens := 0
+		completionTokens := 0
+		for _, child := range component.Components {
+			if child != nil && child.Usage != nil {
+				promptTokens = common.QuotaFromFloat(float64(promptTokens) + float64(child.Usage.PromptTokens))
+				completionTokens = common.QuotaFromFloat(float64(completionTokens) + float64(child.Usage.CompletionTokens))
+			}
+		}
+		vision["batch_count"] = len(component.Components)
+		vision["prompt_tokens"] = promptTokens
+		vision["completion_tokens"] = completionTokens
+		vision["total_tokens"] = common.QuotaFromFloat(float64(promptTokens) + float64(completionTokens))
+	}
+	if snap := component.TieredBillingSnapshot; snap != nil {
+		vision["billing_mode"] = snap.BillingMode
+		vision["expr_b64"] = base64.StdEncoding.EncodeToString([]byte(snap.ExprString))
+		if tieredResult != nil {
+			vision["matched_tier"] = tieredResult.MatchedTier
+		}
+	}
+	other["vision"] = vision
+}
+
+func updateVisionChannelUsedQuota(ctx *gin.Context, component *relaycommon.VisionBillingComponent) {
+	if component == nil || component.CacheHit {
+		return
+	}
+	if len(component.Components) > 0 {
+		for _, child := range component.Components {
+			updateVisionChannelUsedQuota(ctx, child)
+		}
+		return
+	}
+	if component.ChannelId == 0 {
+		return
+	}
+	quota, _, err := CalculateVisionActualQuota(component)
+	component.ActualQuota = quota
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("error calculating vision channel %d used quota: %s", component.ChannelId, err.Error()))
+	}
+	if quota > 0 {
+		model.UpdateChannelUsedQuota(component.ChannelId, quota)
+	}
+}
+
+// RecordFailedVisionCost keeps the real vision-channel cost when the main
+// request fails. The user-facing billing session is refunded by the caller;
+// this records only channel cost and an error log with zero user quota.
+func RecordFailedVisionCost(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, apiErr *types.NewAPIError) {
+	if ctx == nil || relayInfo == nil || apiErr == nil {
+		return
+	}
+	component := relayInfo.VisionBilling
+	if component == nil || component.CacheHit || component.ChannelId == 0 || (component.Usage == nil && len(component.Components) == 0) {
+		return
+	}
+
+	quota, tieredResult, err := CalculateVisionActualQuota(component)
+	component.ActualQuota = quota
+	if err != nil {
+		logger.LogError(ctx, "error calculating failed-request vision cost, using estimated quota: "+err.Error())
+	}
+	if quota <= 0 {
+		return
+	}
+
+	updateVisionChannelUsedQuota(ctx, component)
+	if !constant.ErrorLogEnabled {
+		return
+	}
+
+	other := map[string]interface{}{
+		"vision_cost_only": true,
+		"user_quota":       0,
+		"main_error_type":  apiErr.GetErrorType(),
+		"main_error_code":  apiErr.GetErrorCode(),
+		"main_status_code": apiErr.StatusCode,
+	}
+	appendVisionBillingInfo(other, component, tieredResult)
+	model.RecordErrorLog(
+		ctx,
+		relayInfo.UserId,
+		component.ChannelId,
+		component.ModelName,
+		ctx.GetString("token_name"),
+		"vision channel cost recorded after main request failure",
+		relayInfo.TokenId,
+		int(time.Since(relayInfo.StartTime).Seconds()),
+		relayInfo.IsStream,
+		relayInfo.UsingGroup,
+		other,
+	)
+}
+
 func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
 	originUsage := usage
 	if usage == nil {
@@ -352,6 +631,16 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		}
 	}
 
+	visionQuota, visionTieredResult, visionErr := CalculateVisionActualQuota(relayInfo.VisionBilling)
+	if relayInfo.VisionBilling != nil {
+		relayInfo.VisionBilling.ActualQuota = visionQuota
+	}
+	if visionErr != nil {
+		logger.LogError(ctx, "error calculating vision billing, using estimated quota: "+visionErr.Error())
+		extraContent = append(extraContent, "视觉计费结算失败，按预估额度扣费")
+	}
+	totalQuota := mergedTextVisionQuota(summary.Quota, visionQuota)
+
 	if summary.WebSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 %d 次，调用花费 %s", summary.WebSearchCallCount, decimal.NewFromFloat(summary.WebSearchPrice).Mul(decimal.NewFromInt(int64(summary.WebSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
@@ -368,16 +657,33 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, fmt.Sprintf("Image Generation Call 花费 %s", decimal.NewFromFloat(summary.ImageGenerationCallPrice).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
 
-	if summary.TotalTokens == 0 {
+	mainHasUsage := summary.TotalTokens != 0
+	visionHasUsage := relayInfo.VisionBilling != nil && (relayInfo.VisionBilling.Usage != nil || visionQuota > 0)
+	if !mainHasUsage {
 		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
-	} else {
-		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
+	}
+	if err := SettleBilling(ctx, relayInfo, totalQuota); err != nil {
+		logger.LogError(ctx, "error settling billing: "+err.Error())
+		if constant.ErrorLogEnabled {
+			model.RecordErrorLog(ctx, relayInfo.UserId, relayInfo.ChannelId, summary.ModelName, summary.TokenName,
+				"billing settlement failed: "+err.Error(), relayInfo.TokenId, int(summary.UseTimeSeconds), relayInfo.IsStream, relayInfo.UsingGroup,
+				map[string]interface{}{
+					"billing_settlement_failed": true,
+					"actual_quota":              totalQuota,
+					"pre_consumed_quota":        relayInfo.FinalPreConsumedQuota,
+				})
+		}
+		return
+	}
+	if mainHasUsage || visionHasUsage {
+		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, totalQuota)
+	}
+	if mainHasUsage {
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
-
-	if err := SettleBilling(ctx, relayInfo, summary.Quota); err != nil {
-		logger.LogError(ctx, "error settling billing: "+err.Error())
+	if relayInfo.VisionBilling != nil && visionHasUsage {
+		updateVisionChannelUsedQuota(ctx, relayInfo.VisionBilling)
 	}
 
 	logModel := summary.ModelName
@@ -464,6 +770,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
+	appendVisionBillingInfo(other, relayInfo.VisionBilling, visionTieredResult)
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
@@ -471,7 +778,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		CompletionTokens: summary.CompletionTokens,
 		ModelName:        logModel,
 		TokenName:        summary.TokenName,
-		Quota:            summary.Quota,
+		Quota:            totalQuota,
 		Content:          logContent,
 		TokenId:          relayInfo.TokenId,
 		UseTimeSeconds:   int(summary.UseTimeSeconds),

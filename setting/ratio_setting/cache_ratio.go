@@ -5,6 +5,8 @@ import (
 )
 
 var defaultCacheRatio = map[string]float64{
+	"MiniMax-M3":                          0.2,
+	"minimax-m3":                          0.2,
 	"gemini-3-flash-preview":              0.1,
 	"gemini-3-pro-preview":                0.1,
 	"gemini-3.1-pro-preview":              0.1,

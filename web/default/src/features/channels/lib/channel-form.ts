@@ -54,6 +54,61 @@ function isOptionalJsonObject(value: string | undefined): boolean {
   }
 }
 
+const visionBridgeConfigSchema = z
+  .object({
+    model_map: z
+      .record(z.string(), z.string())
+      .refine(
+        (mapping) =>
+          Object.keys(mapping).length > 0 &&
+          Object.entries(mapping).every(
+            ([source, target]) =>
+              source.trim() === source &&
+              source !== '' &&
+              target.trim() === target &&
+              target !== ''
+          )
+      ),
+    channel_id: z.number().int().positive(),
+    fallback_channel_ids: z
+      .array(z.number().int().positive())
+      .max(1)
+      .optional(),
+    ttft_timeout_ms: z.number().int().min(1000).max(60000).optional(),
+    attempt_timeout_ms: z.number().int().min(1000).max(60000).optional(),
+    service_tier: z.enum(['', 'standard', 'priority']).optional(),
+  })
+  .refine((config) => {
+    const channelIds = [
+      config.channel_id,
+      ...(config.fallback_channel_ids || []),
+    ]
+    return new Set(channelIds).size === channelIds.length
+  })
+  .refine(
+    (config) =>
+      !config.fallback_channel_ids?.length ||
+      (config.ttft_timeout_ms !== undefined &&
+        config.attempt_timeout_ms !== undefined)
+  )
+  .refine(
+    (config) =>
+      !config.fallback_channel_ids?.length ||
+      config.attempt_timeout_ms === undefined ||
+      config.attempt_timeout_ms < (config.ttft_timeout_ms || 10000)
+  )
+
+function isOptionalVisionBridge(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    return (
+      parsed === undefined || visionBridgeConfigSchema.safeParse(parsed).success
+    )
+  } catch {
+    return false
+  }
+}
+
 function isOptionalModelMapping(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -178,6 +233,10 @@ export const channelFormSchema = z
       .string()
       .optional()
       .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
+    vision_bridge: z
+      .string()
+      .optional()
+      .refine(isOptionalVisionBridge, ERROR_MESSAGES.INVALID_JSON),
     advanced_custom: z.string().optional(),
     other: z.string().optional(),
     // Multi-key options (not sent to backend directly)
@@ -323,6 +382,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   param_override: '',
   header_override: '',
   settings: '{}',
+  vision_bridge: '',
   other: '',
   multi_key_mode: 'single',
   multi_key_type: 'random',
@@ -415,6 +475,7 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let visionBridge = ''
 
   if (channel.settings) {
     try {
@@ -442,6 +503,9 @@ export function transformChannelToFormDefaults(
         : ''
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
+      }
+      if (parsed.vision_bridge) {
+        visionBridge = JSON.stringify(parsed.vision_bridge, null, 2)
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -495,6 +559,7 @@ export function transformChannelToFormDefaults(
     upstream_model_update_auto_sync_enabled: upstreamModelUpdateAutoSyncEnabled,
     upstream_model_update_ignored_models: upstreamModelUpdateIgnoredModels,
     advanced_custom: advancedCustom,
+    vision_bridge: visionBridge,
   }
 }
 
@@ -577,12 +642,15 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.allow_inference_geo = formData.allow_inference_geo === true
   } else {
     if ('disable_store' in settingsObj) delete settingsObj.disable_store
-    if ('allow_safety_identifier' in settingsObj)
+    if ('allow_safety_identifier' in settingsObj) {
       delete settingsObj.allow_safety_identifier
-    if ('allow_include_obfuscation' in settingsObj)
+    }
+    if ('allow_include_obfuscation' in settingsObj) {
       delete settingsObj.allow_include_obfuscation
-    if (formData.type !== 14 && 'allow_inference_geo' in settingsObj)
+    }
+    if (formData.type !== 14 && 'allow_inference_geo' in settingsObj) {
       delete settingsObj.allow_inference_geo
+    }
   }
 
   // Anthropic (type 14): claude_beta_query, allow_inference_geo, allow_speed
@@ -605,14 +673,14 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.upstream_model_update_auto_sync_enabled =
       settingsObj.upstream_model_update_check_enabled === true &&
       formData.upstream_model_update_auto_sync_enabled === true
-    settingsObj.upstream_model_update_ignored_models = Array.from(
-      new Set(
+    settingsObj.upstream_model_update_ignored_models = [
+      ...new Set(
         String(formData.upstream_model_update_ignored_models || '')
           .split(',')
           .map((model) => model.trim())
           .filter(Boolean)
-      )
-    )
+      ),
+    ]
     if (
       !Array.isArray(settingsObj.upstream_model_update_last_detected_models) ||
       settingsObj.upstream_model_update_check_enabled !== true
@@ -633,6 +701,12 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     }
   } else if ('advanced_custom' in settingsObj) {
     delete settingsObj.advanced_custom
+  }
+
+  if (formData.vision_bridge?.trim()) {
+    settingsObj.vision_bridge = JSON.parse(formData.vision_bridge)
+  } else if ('vision_bridge' in settingsObj) {
+    delete settingsObj.vision_bridge
   }
 
   return JSON.stringify(settingsObj)

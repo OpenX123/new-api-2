@@ -62,6 +62,34 @@ func TestUserUpdateDoesNotOverwriteAccountingFields(t *testing.T) {
 	assert.Equal(t, 4, got.RequestCount)
 }
 
+func TestUserQuotaWritesStayOrderedWithConditionalDebitWhenBatchingEnabled(t *testing.T) {
+	setupUserUpdateTestState(t)
+	common.BatchUpdateEnabled = true
+
+	user := User{
+		Id:       9,
+		Username: "ordered-quota-user",
+		Password: "password",
+		Status:   common.UserStatusEnabled,
+		Quota:    100,
+	}
+	require.NoError(t, DB.Create(&user).Error)
+
+	require.NoError(t, IncreaseUserQuota(user.Id, 20, false))
+	var quota int
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Select("quota").Scan(&quota).Error)
+	assert.Equal(t, 120, quota)
+
+	require.NoError(t, DecreaseUserQuota(user.Id, 70, false))
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Select("quota").Scan(&quota).Error)
+	assert.Equal(t, 50, quota)
+
+	require.NoError(t, DecreaseUserQuotaIfEnough(user.Id, 50))
+	require.ErrorIs(t, DecreaseUserQuotaIfEnough(user.Id, 1), ErrInsufficientUserQuota)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Select("quota").Scan(&quota).Error)
+	assert.Zero(t, quota)
+}
+
 func TestUpdateUserSettingOnlyUpdatesSetting(t *testing.T) {
 	setupUserUpdateTestState(t)
 

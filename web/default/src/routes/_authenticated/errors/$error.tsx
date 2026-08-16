@@ -33,6 +33,10 @@ export const Route = createFileRoute('/_authenticated/errors/$error')({
   component: RouteComponent,
 })
 
+function InternalServerError() {
+  return <GeneralError statusCode={500} />
+}
+
 function RouteComponent() {
   const { error } = Route.useParams()
 
@@ -40,7 +44,7 @@ function RouteComponent() {
     unauthorized: UnauthorisedError,
     forbidden: ForbiddenError,
     'not-found': NotFoundError,
-    'internal-server-error': GeneralError,
+    'internal-server-error': InternalServerError,
     'maintenance-error': MaintenanceError,
   }
   const ErrorComponent = errorMap[error] || NotFoundError

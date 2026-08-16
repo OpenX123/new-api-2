@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -10,6 +11,17 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 )
+
+func GetVisionChannel(channelId, mainChannelId int, visionAlias string) (*model.Channel, error) {
+	channel, err := model.CacheGetChannel(channelId)
+	if err != nil {
+		return nil, err
+	}
+	if channel == nil || channel.Status != common.ChannelStatusEnabled || channel.Id == mainChannelId || !slices.Contains(channel.GetModels(), visionAlias) {
+		return nil, fmt.Errorf("configured vision channel is unavailable or does not expose the vision alias")
+	}
+	return channel, nil
+}
 
 func formatNotifyType(channelId int, status int) string {
 	return fmt.Sprintf("%s_%d_%d", dto.NotifyTypeChannelUpdate, channelId, status)
@@ -48,6 +60,9 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 		return false
 	}
 	if err == nil {
+		return false
+	}
+	if types.IsLocalDeadlineError(err) {
 		return false
 	}
 	if types.IsChannelError(err) {

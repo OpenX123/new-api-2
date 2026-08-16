@@ -113,6 +113,12 @@ func ReplaceResponseModel(data []byte, info *common.RelayInfo) []byte {
 			return data
 		}
 	}
+	if gjson.GetBytes(result, "message.model").Exists() {
+		result, err = sjson.SetBytes(result, "message.model", info.OriginModelName)
+		if err != nil {
+			return data
+		}
+	}
 	return result
 }
 
@@ -131,6 +137,12 @@ func ReplaceResponseModelStr(data string, info *common.RelayInfo) string {
 	}
 	if gjson.Get(result, "response.model").Exists() {
 		result, err = sjson.Set(result, "response.model", info.OriginModelName)
+		if err != nil {
+			return data
+		}
+	}
+	if gjson.Get(result, "message.model").Exists() {
+		result, err = sjson.Set(result, "message.model", info.OriginModelName)
 		if err != nil {
 			return data
 		}

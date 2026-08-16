@@ -110,6 +110,16 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
+  vision_bridge?: VisionBridgeConfig
+}
+
+export interface VisionBridgeConfig {
+  model_map: Record<string, string>
+  channel_id: number
+  fallback_channel_ids?: number[]
+  ttft_timeout_ms?: number
+  attempt_timeout_ms?: number
+  service_tier?: '' | 'standard' | 'priority'
 }
 
 export interface AdvancedCustomConfig {

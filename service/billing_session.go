@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -27,7 +28,7 @@ type BillingSession struct {
 	funding          FundingSource
 	preConsumedQuota int  // 实际预扣额度（信任用户可能为 0）
 	tokenConsumed    int  // 令牌额度实际扣减量
-	extraReserved    int  // 发送前补充预扣的额度（订阅退款时需要单独回滚）
+	extraReserved    int  // 发送前补充预扣的额度（用于同步 RelayInfo）
 	trusted          bool // 是否命中信任额度旁路
 	fundingSettled   bool // funding.Settle 已成功，资金来源已提交
 	settled          bool // Settle 全部完成（资金 + 令牌）
@@ -99,19 +100,12 @@ func (s *BillingSession) Refund(c *gin.Context) {
 	tokenKey := s.relayInfo.TokenKey
 	isPlayground := s.relayInfo.IsPlayground
 	tokenConsumed := s.tokenConsumed
-	extraReserved := s.extraReserved
-	subscriptionId := s.relayInfo.SubscriptionId
 	funding := s.funding
 
 	gopool.Go(func() {
 		// 1) 退还资金来源
 		if err := funding.Refund(); err != nil {
 			common.SysLog("error refunding billing source: " + err.Error())
-		}
-		if extraReserved > 0 && funding.Source() == BillingSourceSubscription && subscriptionId > 0 {
-			if err := model.PostConsumeUserSubscriptionDelta(subscriptionId, -int64(extraReserved)); err != nil {
-				common.SysLog("error refunding subscription extra reserved quota: " + err.Error())
-			}
 		}
 		// 2) 退还令牌额度
 		if tokenConsumed > 0 && !isPlayground {
@@ -163,7 +157,13 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 	}
 
 	if err := s.reserveFunding(delta); err != nil {
-		return err
+		fellBack, fallbackErr := s.trySubscriptionWalletFallback(targetQuota, err)
+		if !fellBack || fallbackErr != nil {
+			if fallbackErr != nil {
+				return fallbackErr
+			}
+			return err
+		}
 	}
 	if err := s.reserveToken(delta); err != nil {
 		s.rollbackFundingReserve(delta)
@@ -215,6 +215,9 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
 		errMsg := err.Error()
+		if errors.Is(err, model.ErrInsufficientUserQuota) {
+			return types.NewErrorWithStatusCode(fmt.Errorf("用户额度不足: %s", errMsg), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
 		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
 			return types.NewErrorWithStatusCode(fmt.Errorf("订阅额度不足或未配置订阅: %s", errMsg), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
@@ -232,13 +235,25 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 func (s *BillingSession) reserveFunding(delta int) error {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.DecreaseUserQuota(funding.userId, delta, false); err != nil {
+		if err := model.DecreaseUserQuotaIfEnough(funding.userId, delta); err != nil {
+			if errors.Is(err, model.ErrInsufficientUserQuota) {
+				return types.NewErrorWithStatusCode(
+					fmt.Errorf("用户额度不足，无法追加预扣 %s", logger.FormatQuota(delta)),
+					types.ErrorCodeInsufficientUserQuota,
+					http.StatusForbidden,
+					types.ErrOptionWithSkipRetry(),
+					types.ErrOptionWithNoRecordErrorLog(),
+				)
+			}
 			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 		}
 		funding.consumed += delta
 		return nil
 	case *SubscriptionFunding:
-		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, int64(delta)); err != nil {
+		if err := model.AdjustSubscriptionPreConsume(funding.requestId, int64(delta)); err != nil {
+			if !strings.Contains(err.Error(), "subscription used exceeds total") {
+				return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+			}
 			return types.NewErrorWithStatusCode(
 				fmt.Errorf("订阅额度不足或未配置订阅: %s", err.Error()),
 				types.ErrorCodeInsufficientUserQuota,
@@ -253,6 +268,49 @@ func (s *BillingSession) reserveFunding(delta int) error {
 	}
 }
 
+func (s *BillingSession) trySubscriptionWalletFallback(targetQuota int, reserveErr error) (bool, error) {
+	subscription, ok := s.funding.(*SubscriptionFunding)
+	if !ok || common.NormalizeBillingPreference(s.relayInfo.UserSetting.BillingPreference) != "subscription_first" {
+		return false, nil
+	}
+	apiErr, ok := reserveErr.(*types.NewAPIError)
+	if !ok || apiErr.GetErrorCode() != types.ErrorCodeInsufficientUserQuota {
+		return false, nil
+	}
+	allowOverflow, err := model.UserActiveSubscriptionsAllowWalletOverflow(s.relayInfo.UserId)
+	if err != nil {
+		return true, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+	}
+	if !allowOverflow {
+		return false, nil
+	}
+
+	wallet := &WalletFunding{userId: s.relayInfo.UserId}
+	if err := wallet.PreConsume(targetQuota); err != nil {
+		if errors.Is(err, model.ErrInsufficientUserQuota) {
+			return true, types.NewErrorWithStatusCode(
+				fmt.Errorf("用户额度不足，无法从订阅切换到钱包并预扣 %s", logger.FormatQuota(targetQuota)),
+				types.ErrorCodeInsufficientUserQuota,
+				http.StatusForbidden,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+			)
+		}
+		return true, types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
+	if err := subscription.Refund(); err != nil {
+		if rollbackErr := wallet.Refund(); rollbackErr != nil {
+			common.SysLog(fmt.Sprintf("error rolling back wallet after subscription fallback failed (userId=%d, amount=%d): %s", s.relayInfo.UserId, targetQuota, rollbackErr.Error()))
+		}
+		return true, types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
+
+	s.funding = wallet
+	s.extraReserved = 0
+	s.syncRelayInfo()
+	return true, nil
+}
+
 func (s *BillingSession) rollbackFundingReserve(delta int) {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
@@ -262,7 +320,7 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 			funding.consumed -= delta
 		}
 	case *SubscriptionFunding:
-		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
+		if err := model.AdjustSubscriptionPreConsume(funding.requestId, -int64(delta)); err != nil {
 			common.SysLog("error rolling back subscription funding reserve: " + err.Error())
 		}
 	}
