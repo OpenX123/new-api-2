@@ -9,9 +9,11 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
+	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
@@ -304,13 +306,71 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 	}
 }
 
+type visionTTFTDeadline struct {
+	cancel  context.CancelCauseFunc
+	timer   *time.Timer
+	settled atomic.Bool
+}
+
+func newVisionTTFTDeadline(parent context.Context, deadline time.Time) (context.Context, *visionTTFTDeadline) {
+	ctx, cancel := context.WithCancelCause(parent)
+	state := &visionTTFTDeadline{cancel: cancel}
+	remaining := time.Until(deadline)
+	if remaining < 0 {
+		remaining = 0
+	}
+	if remaining == 0 {
+		state.timer = time.NewTimer(time.Hour)
+		state.timer.Stop()
+		state.expire()
+	} else {
+		state.timer = time.AfterFunc(remaining, state.expire)
+	}
+	return ctx, state
+}
+
+func (d *visionTTFTDeadline) expire() {
+	if d != nil && d.settled.CompareAndSwap(false, true) {
+		d.cancel(helper.ErrVisionTTFTTimeout)
+	}
+}
+
+func (d *visionTTFTDeadline) release() bool {
+	if d != nil && d.settled.CompareAndSwap(false, true) {
+		d.timer.Stop()
+		return true
+	}
+	return false
+}
+
+func (d *visionTTFTDeadline) close() {
+	if d == nil {
+		return
+	}
+	d.release()
+	d.cancel(context.Canceled)
+}
+
+func visionTTFTDeadlineAt(c *gin.Context, upstreamStarted time.Time, timeout time.Duration) time.Time {
+	deadline := upstreamStarted.Add(timeout)
+	requestStarted := common2.GetContextKeyTime(c, appconstant.ContextKeyRequestStartTime)
+	if requestStarted.IsZero() {
+		return deadline
+	}
+	endToEndDeadline := requestStarted.Add(helper.VisionEndToEndTTFTTimeout)
+	if endToEndDeadline.Before(deadline) {
+		return endToEndDeadline
+	}
+	return deadline
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
 	logger.LogDebug(c, "fullRequestURL: %s", fullRequestURL)
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
@@ -327,9 +387,46 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	upstreamStarted := time.Now()
+	if common2.GetContextKeyBool(c, appconstant.ContextKeyVisionAugmented) {
+		if firstAttempt := common2.GetContextKeyTime(c, appconstant.ContextKeyUpstreamStartTime); firstAttempt.IsZero() {
+			common2.SetContextKey(c, appconstant.ContextKeyUpstreamStartTime, upstreamStarted)
+		}
+	} else {
+		common2.SetContextKey(c, appconstant.ContextKeyUpstreamStartTime, upstreamStarted)
+	}
+	var ttftDeadline *visionTTFTDeadline
+	ttftTimeoutMs := 10000
+	if common2.GetContextKeyBool(c, appconstant.ContextKeyVisionAugmented) && info.IsStream {
+		ttftTimeoutMs = common2.GetContextKeyInt(c, appconstant.ContextKeyVisionTTFTTimeoutMs)
+		if ttftTimeoutMs <= 0 {
+			ttftTimeoutMs = 10000
+		}
+		var ttftCtx context.Context
+		ttftCtx, ttftDeadline = newVisionTTFTDeadline(c.Request.Context(), visionTTFTDeadlineAt(c, upstreamStarted, time.Duration(ttftTimeoutMs)*time.Millisecond))
+		req = req.WithContext(ttftCtx)
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
+		var ttftCause error
+		if ttftDeadline != nil {
+			ttftDeadline.close()
+			ttftCause = context.Cause(req.Context())
+		}
+		if ttftErr := helper.VisionTTFTError(ttftCause); ttftErr != nil {
+			logger.LogError(c, fmt.Sprintf("vision-augmented request TTFT timeout after %d ms", ttftTimeoutMs))
+			return nil, ttftErr
+		}
 		return nil, fmt.Errorf("do request failed: %w", err)
+	}
+	if ttftDeadline != nil {
+		if resp.StatusCode != http.StatusOK {
+			ttftDeadline.close()
+		} else {
+			resp.Body = helper.NewVisionTTFTGateBody(resp.Body, ttftDeadline.close, func() error {
+				return context.Cause(req.Context())
+			}, ttftDeadline.release)
+		}
 	}
 	return resp, nil
 }
@@ -488,7 +585,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	var stopPinger context.CancelFunc
 	var pingerDone <-chan struct{}
-	if info.IsStream {
+	if info.IsStream && !common2.GetContextKeyBool(c, appconstant.ContextKeyVisionAugmented) {
 		helper.SetEventStreamHeaders(c)
 		// 处理流式请求的 ping 保活
 		generalSettings := operation_setting.GetGeneralSetting()

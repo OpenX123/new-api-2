@@ -7,8 +7,13 @@ const (
 	ContextKeyPromptTokens    ContextKey = "prompt_tokens"
 	ContextKeyEstimatedTokens ContextKey = "estimated_tokens"
 
-	ContextKeyOriginalModel    ContextKey = "original_model"
-	ContextKeyRequestStartTime ContextKey = "request_start_time"
+	ContextKeyOriginalModel       ContextKey = "original_model"
+	ContextKeyVisionAugmented     ContextKey = "vision_augmented"
+	ContextKeyVisionImageCount    ContextKey = "vision_image_count"
+	ContextKeyVisionPreprocessMs  ContextKey = "vision_preprocess_ms"
+	ContextKeyVisionTTFTTimeoutMs ContextKey = "vision_ttft_timeout_ms"
+	ContextKeyUpstreamStartTime   ContextKey = "upstream_request_start_time"
+	ContextKeyRequestStartTime    ContextKey = "request_start_time"
 
 	/* token related keys */
 	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"

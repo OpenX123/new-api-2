@@ -270,6 +270,7 @@ const SENSITIVE_FORM_FIELDS = [
   'settings',
   'setting',
   'advanced_custom',
+  'vision_bridge',
   'is_enterprise_account',
   'vertex_key_type',
   'aws_key_type',
@@ -321,6 +322,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     hasConfiguredOverrideValue(values.param_override) ||
     hasConfiguredOverrideValue(values.header_override) ||
     values.advanced_custom?.trim() ||
+    values.vision_bridge?.trim() ||
     hasConfiguredOverrideValue(values.status_code_mapping) ||
     values.tag?.trim() ||
     values.remark?.trim() ||
@@ -711,6 +713,7 @@ export function ChannelMutateDrawer({
   const hideUpstreamErrorsEnabled = form.watch('hide_upstream_errors')
   const currentSettings = form.watch('settings')
   const currentAdvancedCustom = form.watch('advanced_custom')
+  const currentVisionBridge = form.watch('vision_bridge')
   const currentPriority = form.watch('priority')
   const currentWeight = form.watch('weight')
   const currentTestModel = form.watch('test_model')
@@ -932,6 +935,7 @@ export function ChannelMutateDrawer({
     currentDisableTaskPollingSleep ||
     currentProxy?.trim() ||
     currentSystemPrompt?.trim() ||
+    currentVisionBridge?.trim() ||
     currentSystemPromptOverride
   )
   let fieldPassthroughConfigured = false
@@ -4131,6 +4135,36 @@ export function ChannelMutateDrawer({
                               )}
                             />
 
+                            <FormField
+                              control={form.control}
+                              name='vision_bridge'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('Vision Bridge')}</FormLabel>
+                                  <FormControl>
+                                    <Textarea
+                                      rows={7}
+                                      placeholder={`{
+  "model_map": {"claude-opus-5": "claude-opus-5"},
+  "channel_id": 2,
+  "fallback_channel_ids": [3],
+  "ttft_timeout_ms": 60000,
+  "attempt_timeout_ms": 30000,
+  "service_tier": "priority"
+}`}
+                                      {...field}
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'Optional Claude Messages image bridge. Map public models to aliases on an ordered primary and fallback vision channel list. Leave empty to disable.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
                             <div className='divide-border space-y-0 divide-y border-y'>
                               <FormField
                                 control={form.control}
@@ -4167,9 +4201,7 @@ export function ChannelMutateDrawer({
                                       </FormLabel>
                                       <FormControl>
                                         <Textarea
-                                          placeholder={
-                                            'upstream error (status code: {status_code})'
-                                          }
+                                          placeholder="upstream error (status code: {status_code})"
                                           rows={2}
                                           {...field}
                                         />

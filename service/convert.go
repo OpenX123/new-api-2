@@ -297,9 +297,13 @@ func StreamResponseOpenAI2Claude(openAIResponse *dto.ChatCompletionsStreamRespon
 		info.ClaudeConvertInfo.LastMessagesType = relaycommon.LastMessageTypeNone
 	}
 	if info.SendResponseCount == 1 {
+		responseModel := openAIResponse.Model
+		if info.IsModelMapped {
+			responseModel = info.OriginModelName
+		}
 		msg := &dto.ClaudeMediaMessage{
 			Id:    openAIResponse.Id,
-			Model: openAIResponse.Model,
+			Model: responseModel,
 			Type:  "message",
 			Role:  "assistant",
 			Usage: &dto.ClaudeUsage{
@@ -607,11 +611,15 @@ func StreamResponseOpenAI2Claude(openAIResponse *dto.ChatCompletionsStreamRespon
 func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info *relaycommon.RelayInfo) *dto.ClaudeResponse {
 	var stopReason string
 	contents := make([]dto.ClaudeMediaMessage, 0)
+	responseModel := openAIResponse.Model
+	if info != nil && info.IsModelMapped {
+		responseModel = info.OriginModelName
+	}
 	claudeResponse := &dto.ClaudeResponse{
 		Id:    openAIResponse.Id,
 		Type:  "message",
 		Role:  "assistant",
-		Model: openAIResponse.Model,
+		Model: responseModel,
 	}
 	for _, choice := range openAIResponse.Choices {
 		stopReason = stopReasonOpenAI2Claude(choice.FinishReason)

@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -44,6 +45,19 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["model_price"] = modelPrice
 	other["user_group_ratio"] = userGroupRatio
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
+	if common.GetContextKeyBool(ctx, constant.ContextKeyVisionAugmented) {
+		e2eTTFT := relayInfo.FirstResponseTime.Sub(relayInfo.StartTime).Milliseconds()
+		other["vision_augmented"] = true
+		other["image_count"] = common.GetContextKeyInt(ctx, constant.ContextKeyVisionImageCount)
+		other["vision_preprocess_ms"] = common.GetContextKeyInt(ctx, constant.ContextKeyVisionPreprocessMs)
+		other["vision_ms"] = common.GetContextKeyInt(ctx, constant.ContextKeyVisionPreprocessMs)
+		other["end_to_end_ttft_ms"] = e2eTTFT
+		other["timeout"] = false
+		if upstreamStart, ok := common.GetContextKeyType[time.Time](ctx, constant.ContextKeyUpstreamStartTime); ok {
+			other["upstream_ttft_ms"] = relayInfo.FirstResponseTime.Sub(upstreamStart).Milliseconds()
+			other["deepseek_ttft_ms"] = relayInfo.FirstResponseTime.Sub(upstreamStart).Milliseconds()
+		}
+	}
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
 	}

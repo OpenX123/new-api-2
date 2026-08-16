@@ -55,10 +55,10 @@ func ExtendWriteDeadline(c *gin.Context) {
 	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Now().Add(streamWriteTimeout))
 }
 
-func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler func(data string, sr *StreamResult)) {
+func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler func(data string, sr *StreamResult)) error {
 
 	if resp == nil || dataHandler == nil {
-		return
+		return nil
 	}
 
 	// 无条件新建 StreamStatus
@@ -86,7 +86,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	generalSettings := operation_setting.GetGeneralSetting()
-	pingEnabled := generalSettings.PingIntervalEnabled && !info.DisablePing
+	isVisionAugmented := common.GetContextKeyBool(c, constant.ContextKeyVisionAugmented)
+	pingEnabled := generalSettings.PingIntervalEnabled && !info.DisablePing && !isVisionAugmented
 	pingInterval := time.Duration(generalSettings.PingIntervalSeconds) * time.Second
 	if pingInterval <= 0 {
 		pingInterval = DefaultPingInterval
@@ -122,7 +123,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	defer cleanup()
 
 	scanner.Split(bufio.ScanLines)
-	SetEventStreamHeaders(c)
+	if !isVisionAugmented {
+		SetEventStreamHeaders(c)
+	}
 
 	ctx = context.WithValue(ctx, "stop_chan", stopChan)
 
@@ -194,6 +197,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			func() {
 				writeMutex.Lock()
 				defer writeMutex.Unlock()
+				if isVisionAugmented {
+					SetEventStreamHeaders(c)
+				}
 				ExtendWriteDeadline(c)
 				dataHandler(data, sr)
 			}()
@@ -287,4 +293,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	} else {
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	}
+	if IsVisionTTFTError(info.StreamStatus.EndError) {
+		return info.StreamStatus.EndError
+	}
+	return nil
 }
