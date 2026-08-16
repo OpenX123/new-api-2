@@ -81,3 +81,17 @@ func TestRecordConsumeLogStoresUserAgent(t *testing.T) {
 	require.NoError(t, LOG_DB.First(&log).Error)
 	assert.JSONEq(t, `{"existing":true,"user_agent":"Codex Desktop/0.147.0","request_body":{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"api_key":"[已隐藏]"}}`, log.Other)
 }
+
+func TestGetAllLogsOmitsRequestBody(t *testing.T) {
+	setupLogIPTestDB(t)
+	require.NoError(t, LOG_DB.Create(&Log{
+		CreatedAt: 1,
+		Other:     `{"request_body":{"messages":[{"content":"large payload"}]},"user_agent":"Codex Desktop/0.147.0"}`,
+	}).Error)
+
+	logs, total, err := GetAllLogs(LogTypeUnknown, 0, 0, "", "", "", 0, 50, 0, "", "", "")
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	assert.EqualValues(t, 1, total)
+	assert.JSONEq(t, `{"user_agent":"Codex Desktop/0.147.0"}`, logs[0].Other)
+}

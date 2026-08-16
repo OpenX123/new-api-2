@@ -114,7 +114,22 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 	}
 }
 
+func removeRequestBodies(logs []*Log) {
+	for _, log := range logs {
+		otherMap, err := common.StrToMap(log.Other)
+		if err != nil {
+			continue
+		}
+		if _, ok := otherMap["request_body"]; !ok {
+			continue
+		}
+		delete(otherMap, "request_body")
+		log.Other = common.MapToJsonStr(otherMap)
+	}
+}
+
 func formatUserLogs(logs []*Log, startIdx int) {
+	removeRequestBodies(logs)
 	for i := range logs {
 		logs[i].ChannelName = ""
 		var otherMap map[string]interface{}
@@ -559,6 +574,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if err != nil {
 		return nil, 0, err
 	}
+	removeRequestBodies(logs)
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		assignDisplayLogIds(logs, startIdx)
 	}
