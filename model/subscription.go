@@ -1244,6 +1244,35 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 	return returnValue, nil
 }
 
+// AdjustSubscriptionPreConsume atomically adjusts both the subscription usage
+// and the durable request-scoped pre-consume amount.
+func AdjustSubscriptionPreConsume(requestId string, delta int64) error {
+	if strings.TrimSpace(requestId) == "" {
+		return errors.New("requestId is empty")
+	}
+	if delta == 0 {
+		return nil
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var record SubscriptionPreConsumeRecord
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("request_id = ?", requestId).First(&record).Error; err != nil {
+			return err
+		}
+		if record.Status != "consumed" {
+			return errors.New("subscription pre-consume already refunded")
+		}
+		if record.PreConsumed+delta <= 0 {
+			return errors.New("subscription pre-consume must remain positive")
+		}
+		if err := postConsumeUserSubscriptionDeltaTx(tx, record.UserSubscriptionId, delta); err != nil {
+			return err
+		}
+		record.PreConsumed += delta
+		return tx.Save(&record).Error
+	})
+}
+
 // RefundSubscriptionPreConsume is idempotent and refunds pre-consumed subscription quota by requestId.
 func RefundSubscriptionPreConsume(requestId string) error {
 	if strings.TrimSpace(requestId) == "" {
@@ -1262,7 +1291,7 @@ func RefundSubscriptionPreConsume(requestId string) error {
 			record.Status = "refunded"
 			return tx.Save(&record).Error
 		}
-		if err := PostConsumeUserSubscriptionDelta(record.UserSubscriptionId, -record.PreConsumed); err != nil {
+		if err := postConsumeUserSubscriptionDeltaTx(tx, record.UserSubscriptionId, -record.PreConsumed); err != nil {
 			return err
 		}
 		record.Status = "refunded"
@@ -1361,20 +1390,24 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		return nil
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var sub UserSubscription
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("id = ?", userSubscriptionId).
-			First(&sub).Error; err != nil {
-			return err
-		}
-		newUsed := sub.AmountUsed + delta
-		if newUsed < 0 {
-			newUsed = 0
-		}
-		if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
-			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
-		}
-		sub.AmountUsed = newUsed
-		return tx.Save(&sub).Error
+		return postConsumeUserSubscriptionDeltaTx(tx, userSubscriptionId, delta)
 	})
+}
+
+func postConsumeUserSubscriptionDeltaTx(tx *gorm.DB, userSubscriptionId int, delta int64) error {
+	var sub UserSubscription
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").
+		Where("id = ?", userSubscriptionId).
+		First(&sub).Error; err != nil {
+		return err
+	}
+	newUsed := sub.AmountUsed + delta
+	if newUsed < 0 {
+		newUsed = 0
+	}
+	if sub.AmountTotal > 0 && newUsed > sub.AmountTotal {
+		return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
+	}
+	sub.AmountUsed = newUsed
+	return tx.Save(&sub).Error
 }

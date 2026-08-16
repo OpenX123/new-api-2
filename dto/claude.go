@@ -34,6 +34,7 @@ type ClaudeMediaMessage struct {
 	Input     any    `json:"input,omitempty"`
 	Content   any    `json:"content,omitempty"`
 	ToolUseId string `json:"tool_use_id,omitempty"`
+	IsError   *bool  `json:"is_error,omitempty"`
 }
 
 func (c *ClaudeMediaMessage) SetText(s string) {

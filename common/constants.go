@@ -22,6 +22,7 @@ var TopUpLink = ""
 var themeValue atomic.Value // stores string; safe for concurrent read/write
 
 func init() {
+	time.Local = time.FixedZone("Asia/Shanghai", 8*60*60)
 	themeValue.Store("classic")
 }
 

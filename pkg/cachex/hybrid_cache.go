@@ -24,8 +24,11 @@ type HybridCacheConfig[V any] struct {
 	Redis        *redis.Client
 	RedisCodec   ValueCodec[V]
 	RedisEnabled func() bool
+	// LocalFallback keeps a process-local copy when Redis is temporarily unavailable.
+	// It is opt-in because Redis remains authoritative for existing shared caches.
+	LocalFallback bool
 
-	// Memory builds a hot cache used when Redis is disabled. Keys stored in memory are fully namespaced.
+	// Memory builds a hot cache used when Redis is disabled or LocalFallback is enabled. Keys stored in memory are fully namespaced.
 	Memory func() *hot.HotCache[string, V]
 }
 
@@ -33,9 +36,10 @@ type HybridCacheConfig[V any] struct {
 type HybridCache[V any] struct {
 	ns Namespace
 
-	redis        *redis.Client
-	redisCodec   ValueCodec[V]
-	redisEnabled func() bool
+	redis         *redis.Client
+	redisCodec    ValueCodec[V]
+	redisEnabled  func() bool
+	localFallback bool
 
 	memOnce sync.Once
 	memInit func() *hot.HotCache[string, V]
@@ -44,11 +48,12 @@ type HybridCache[V any] struct {
 
 func NewHybridCache[V any](cfg HybridCacheConfig[V]) *HybridCache[V] {
 	return &HybridCache[V]{
-		ns:           cfg.Namespace,
-		redis:        cfg.Redis,
-		redisCodec:   cfg.RedisCodec,
-		redisEnabled: cfg.RedisEnabled,
-		memInit:      cfg.Memory,
+		ns:            cfg.Namespace,
+		redis:         cfg.Redis,
+		redisCodec:    cfg.RedisCodec,
+		redisEnabled:  cfg.RedisEnabled,
+		localFallback: cfg.LocalFallback,
+		memInit:       cfg.Memory,
 	}
 }
 
@@ -78,6 +83,10 @@ func (c *HybridCache[V]) memCache() *hot.HotCache[string, V] {
 }
 
 func (c *HybridCache[V]) Get(key string) (value V, found bool, err error) {
+	return c.GetContext(context.Background(), key)
+}
+
+func (c *HybridCache[V]) GetContext(parent context.Context, key string) (value V, found bool, err error) {
 	full := c.ns.FullKey(key)
 	if full == "" {
 		var zero V
@@ -85,7 +94,7 @@ func (c *HybridCache[V]) Get(key string) (value V, found bool, err error) {
 	}
 
 	if c.redisOn() {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultRedisOpTimeout)
+		ctx, cancel := context.WithTimeout(parent, defaultRedisOpTimeout)
 		defer cancel()
 
 		raw, e := c.redis.Get(ctx, full).Result()
@@ -98,8 +107,16 @@ func (c *HybridCache[V]) Get(key string) (value V, found bool, err error) {
 			return v, true, nil
 		}
 		if errors.Is(e, redis.Nil) {
+			if c.localFallback {
+				return c.memCache().Get(full)
+			}
 			var zero V
 			return zero, false, nil
+		}
+		if c.localFallback {
+			if cached, cacheFound, _ := c.memCache().Get(full); cacheFound {
+				return cached, true, nil
+			}
 		}
 		var zero V
 		return zero, false, e
@@ -109,17 +126,24 @@ func (c *HybridCache[V]) Get(key string) (value V, found bool, err error) {
 }
 
 func (c *HybridCache[V]) SetWithTTL(key string, v V, ttl time.Duration) error {
+	return c.SetWithTTLContext(context.Background(), key, v, ttl)
+}
+
+func (c *HybridCache[V]) SetWithTTLContext(parent context.Context, key string, v V, ttl time.Duration) error {
 	full := c.ns.FullKey(key)
 	if full == "" {
 		return nil
 	}
 
 	if c.redisOn() {
+		if c.localFallback {
+			c.memCache().SetWithTTL(full, v, ttl)
+		}
 		raw, err := c.redisCodec.Encode(v)
 		if err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), defaultRedisOpTimeout)
+		ctx, cancel := context.WithTimeout(parent, defaultRedisOpTimeout)
 		defer cancel()
 		return c.redis.Set(ctx, full, raw, ttl).Err()
 	}

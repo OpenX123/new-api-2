@@ -22,9 +22,10 @@ type DiskSpaceInfo struct {
 
 // SystemStatus 系统状态信息
 type SystemStatus struct {
-	CPUUsage    float64
-	MemoryUsage float64
-	DiskUsage   float64
+	CPUUsage           float64
+	CPUOverloadSamples int
+	MemoryUsage        float64
+	DiskUsage          float64
 }
 
 var latestSystemStatus atomic.Value
@@ -51,6 +52,8 @@ func StartSystemMonitor() {
 
 func updateSystemStatus() {
 	var status SystemStatus
+	previous := GetSystemStatus()
+	config := GetPerformanceMonitorConfig()
 
 	// CPU
 	// 注意：cpu.Percent(0, false) 返回自上次调用以来的 CPU 使用率
@@ -58,6 +61,9 @@ func updateSystemStatus() {
 	percents, err := cpu.Percent(0, false)
 	if err == nil && len(percents) > 0 {
 		status.CPUUsage = percents[0]
+	}
+	if config.CPUThreshold > 0 && int(status.CPUUsage) > config.CPUThreshold {
+		status.CPUOverloadSamples = previous.CPUOverloadSamples + 1
 	}
 
 	// Memory
