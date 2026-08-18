@@ -23,6 +23,30 @@ func TestRequestOpenAI2ClaudeMessageOmitsEmptyTools(t *testing.T) {
 	assert.Nil(t, request.Tools)
 }
 
+func TestRequestOpenAI2ClaudeMessagePreservesParameterlessTool(t *testing.T) {
+	request, err := RequestOpenAI2ClaudeMessage(nil, dto.GeneralOpenAIRequest{
+		Model:    "claude-test",
+		Messages: []dto.Message{{Role: "user", Content: "hi"}},
+		Tools: []dto.ToolCallRequest{{
+			Type: "function",
+			Function: dto.FunctionRequest{
+				Name: "get_current_time",
+			},
+		}},
+	})
+	require.NoError(t, err)
+
+	tools, ok := request.Tools.([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 1)
+	tool := tools[0].(*dto.Tool)
+	assert.Equal(t, "get_current_time", tool.Name)
+	assert.Equal(t, map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]any{},
+	}, tool.InputSchema)
+}
+
 func TestResponseOpenAI2ClaudeToolUseInputIsObject(t *testing.T) {
 	tests := []struct {
 		name string

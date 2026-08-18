@@ -48,25 +48,25 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	claudeTools := make([]any, 0, len(textRequest.Tools))
 
 	for _, tool := range textRequest.Tools {
-		if params, ok := tool.Function.Parameters.(map[string]any); ok {
-			claudeTool := dto.Tool{
-				Name:        tool.Function.Name,
-				Description: tool.Function.Description,
-			}
-			claudeTool.InputSchema = make(map[string]interface{})
-			if params["type"] != nil {
-				claudeTool.InputSchema["type"] = params["type"].(string)
-			}
-			claudeTool.InputSchema["properties"] = params["properties"]
-			claudeTool.InputSchema["required"] = params["required"]
-			for s, a := range params {
-				if s == "type" || s == "properties" || s == "required" {
-					continue
-				}
-				claudeTool.InputSchema[s] = a
-			}
-			claudeTools = append(claudeTools, &claudeTool)
+		params, ok := tool.Function.Parameters.(map[string]any)
+		if !ok && tool.Type != "function" {
+			continue
 		}
+		inputSchema := make(map[string]interface{}, len(params)+2)
+		for key, value := range params {
+			inputSchema[key] = value
+		}
+		if inputSchema["type"] == nil {
+			inputSchema["type"] = "object"
+		}
+		if inputSchema["properties"] == nil {
+			inputSchema["properties"] = map[string]any{}
+		}
+		claudeTools = append(claudeTools, &dto.Tool{
+			Name:        tool.Function.Name,
+			Description: tool.Function.Description,
+			InputSchema: inputSchema,
+		})
 	}
 
 	// Web search tool
