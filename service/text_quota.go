@@ -180,6 +180,28 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			TotalTokens:      relayInfo.GetEstimatePromptTokens(),
 		}
 	}
+	usageCopy := *usage
+	usage = &usageCopy
+	if inputDetails := usage.InputTokensDetails; inputDetails != nil {
+		if usage.PromptTokensDetails.CachedTokens == 0 {
+			usage.PromptTokensDetails.CachedTokens = inputDetails.CachedTokens
+		}
+		if usage.PromptTokensDetails.CachedCreationTokens == 0 {
+			usage.PromptTokensDetails.CachedCreationTokens = inputDetails.CachedCreationTokens
+		}
+		if usage.PromptTokensDetails.TextTokens == 0 {
+			usage.PromptTokensDetails.TextTokens = inputDetails.TextTokens
+		}
+		if usage.PromptTokensDetails.ImageTokens == 0 {
+			usage.PromptTokensDetails.ImageTokens = inputDetails.ImageTokens
+		}
+		if usage.PromptTokensDetails.AudioTokens == 0 {
+			usage.PromptTokensDetails.AudioTokens = inputDetails.AudioTokens
+		}
+	}
+	if usage.PromptTokensDetails.CachedTokens == 0 {
+		usage.PromptTokensDetails.CachedTokens = usage.PromptCacheHitTokens
+	}
 
 	summary.PromptTokens = usage.PromptTokens
 	summary.CompletionTokens = usage.CompletionTokens

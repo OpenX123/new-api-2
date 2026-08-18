@@ -32,6 +32,34 @@ func (s *failingBillingSettler) Settle(actualQuota int) error {
 	return errors.New("forced settlement failure")
 }
 
+func TestCalculateTextQuotaSummaryUsesResponsesInputTokenDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-4o",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 2,
+			CacheRatio:      0.25,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 10,
+		TotalTokens:      110,
+		InputTokensDetails: &dto.InputTokenDetails{
+			CachedTokens: 40,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, 40, summary.CacheTokens)
+	require.Equal(t, 90, summary.Quota)
+	require.Zero(t, usage.PromptTokensDetails.CachedTokens)
+}
+
 func (*failingBillingSettler) Refund(*gin.Context)      {}
 func (*failingBillingSettler) NeedsRefund() bool        { return false }
 func (*failingBillingSettler) GetPreConsumedQuota() int { return 100 }
