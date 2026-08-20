@@ -401,6 +401,12 @@ func runGoAwayAfterFirstRequestServer(ln net.Listener) <-chan h2ServerResult {
 	go func() {
 		res := h2ServerResult{}
 		defer func() { resCh <- res }()
+		var drainingConn net.Conn
+		defer func() {
+			if drainingConn != nil {
+				drainingConn.Close()
+			}
+		}()
 
 		for attempt := 0; attempt < 2; attempt++ {
 			conn, framer, err := acceptH2TestConnection(ln)
@@ -419,11 +425,12 @@ func runGoAwayAfterFirstRequestServer(ln net.Listener) <-chan h2ServerResult {
 
 			if attempt == 0 {
 				err = framer.WriteGoAway(0, http2.ErrCodeNo, nil)
-				conn.Close()
 				if err != nil {
+					conn.Close()
 					res.err = err
 					return
 				}
+				drainingConn = conn
 				continue
 			}
 
