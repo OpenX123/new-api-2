@@ -492,3 +492,39 @@ func AdminDeleteUserSubscription(c *gin.Context) {
 	}
 	common.ApiSuccess(c, nil)
 }
+
+func AdminResetUserSubscriptionQuota(c *gin.Context) {
+	adminUpdateUserSubscriptionQuota(c, false)
+}
+
+func AdminClearUserSubscriptionQuota(c *gin.Context) {
+	adminUpdateUserSubscriptionQuota(c, true)
+}
+
+func adminUpdateUserSubscriptionQuota(c *gin.Context, clearRemaining bool) {
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	var result *model.AdminUserSubscriptionQuotaResult
+	var err error
+	action := "subscription.quota_reset"
+	if clearRemaining {
+		result, err = model.AdminClearUserSubscriptionQuota(subId)
+		action = "subscription.quota_clear"
+	} else {
+		result, err = model.AdminResetUserSubscriptionQuota(subId)
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAuditFor(c, result.UserId, action, map[string]interface{}{
+		"subscription_id":    result.SubscriptionId,
+		"plan_id":            result.PlanId,
+		"amount_used_before": result.AmountUsedBefore,
+		"amount_used_after":  result.AmountUsedAfter,
+	})
+	common.ApiSuccess(c, result)
+}

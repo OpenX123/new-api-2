@@ -53,6 +53,8 @@ import {
   getUserSubscriptions,
   createUserSubscription,
   invalidateUserSubscription,
+  resetUserSubscriptionQuota,
+  clearUserSubscriptionQuota,
   deleteUserSubscription,
 } from '../../api'
 import { formatTimestamp } from '../../lib'
@@ -111,6 +113,7 @@ export function UserSubscriptionsDialog(props: Props) {
     type: 'invalidate' | 'delete'
     subId: number
   } | null>(null)
+  const [quotaUpdating, setQuotaUpdating] = useState(false)
 
   const planTitleMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -190,6 +193,38 @@ export function UserSubscriptionsDialog(props: Props) {
     } finally {
       setConfirmAction(null)
     }
+  }
+
+  const handleQuotaAction = async (type: 'reset' | 'clear', subId: number) => {
+    setQuotaUpdating(true)
+    try {
+      const res =
+        type === 'reset'
+          ? await resetUserSubscriptionQuota(subId)
+          : await clearUserSubscriptionQuota(subId)
+      if (res.success) {
+        toast.success(type === 'reset' ? t('Reset completed') : t('Cleared'))
+        await loadData()
+        props.onSuccess?.()
+      } else {
+        toast.error(res.message || t('Operation failed'))
+      }
+    } catch {
+      toast.error(t('Operation failed'))
+    } finally {
+      setQuotaUpdating(false)
+    }
+  }
+
+  let confirmTitle = t('Confirm delete')
+  let confirmDesc = t(
+    'Deleting will permanently remove this subscription record (including benefit details). Continue?'
+  )
+  if (confirmAction?.type === 'invalidate') {
+    confirmTitle = t('Confirm invalidate')
+    confirmDesc = t(
+      'After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?'
+    )
   }
 
   return (
@@ -320,9 +355,34 @@ export function UserSubscriptionsDialog(props: Props) {
                     const isExpired =
                       (sub.end_time || 0) > 0 && sub.end_time < now
                     const isActive = sub.status === 'active' && !isExpired
+                    const canReset =
+                      isActive &&
+                      Number(sub.amount_total || 0) > 0 &&
+                      Number(sub.amount_used || 0) > 0
+                    const canClear =
+                      isActive &&
+                      Number(sub.amount_total || 0) > 0 &&
+                      Number(sub.amount_used || 0) <
+                        Number(sub.amount_total || 0)
 
                     return (
                       <div className='flex justify-end gap-1'>
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          disabled={!canReset || quotaUpdating}
+                          onClick={() => handleQuotaAction('reset', sub.id)}
+                        >
+                          {t('Quota Reset')}
+                        </Button>
+                        <Button
+                          size='sm'
+                          variant='destructive'
+                          disabled={!canClear || quotaUpdating}
+                          onClick={() => handleQuotaAction('clear', sub.id)}
+                        >
+                          {t('Clear Quota')}
+                        </Button>
                         <Button
                           size='sm'
                           variant='outline'
@@ -362,20 +422,8 @@ export function UserSubscriptionsDialog(props: Props) {
         <ConfirmDialog
           open
           onOpenChange={(v) => !v && setConfirmAction(null)}
-          title={
-            confirmAction.type === 'invalidate'
-              ? t('Confirm invalidate')
-              : t('Confirm delete')
-          }
-          desc={
-            confirmAction.type === 'invalidate'
-              ? t(
-                  'After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?'
-                )
-              : t(
-                  'Deleting will permanently remove this subscription record (including benefit details). Continue?'
-                )
-          }
+          title={confirmTitle}
+          desc={confirmDesc}
           handleConfirm={handleConfirmAction}
           destructive={confirmAction.type === 'delete'}
         />

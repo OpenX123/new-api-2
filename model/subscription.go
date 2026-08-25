@@ -13,6 +13,7 @@ import (
 	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Subscription duration units
@@ -294,6 +295,14 @@ func (s *UserSubscription) BeforeUpdate(tx *gorm.DB) error {
 
 type SubscriptionSummary struct {
 	Subscription *UserSubscription `json:"subscription"`
+}
+
+type AdminUserSubscriptionQuotaResult struct {
+	UserId           int   `json:"user_id"`
+	PlanId           int   `json:"plan_id"`
+	SubscriptionId   int   `json:"subscription_id"`
+	AmountUsedBefore int64 `json:"amount_used_before"`
+	AmountUsedAfter  int64 `json:"amount_used_after"`
 }
 
 func calcPlanEndTime(start time.Time, plan *SubscriptionPlan) (int64, error) {
@@ -982,6 +991,60 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
 	return "", nil
+}
+
+func AdminResetUserSubscriptionQuota(userSubscriptionId int) (*AdminUserSubscriptionQuotaResult, error) {
+	return adminSetUserSubscriptionQuotaUsage(userSubscriptionId, false)
+}
+
+func AdminClearUserSubscriptionQuota(userSubscriptionId int) (*AdminUserSubscriptionQuotaResult, error) {
+	return adminSetUserSubscriptionQuotaUsage(userSubscriptionId, true)
+}
+
+// adminSetUserSubscriptionQuotaUsage restores full quota or clears the remaining
+// quota while preserving validity and the automatic reset schedule.
+func adminSetUserSubscriptionQuotaUsage(userSubscriptionId int, clearRemaining bool) (*AdminUserSubscriptionQuotaResult, error) {
+	if userSubscriptionId <= 0 {
+		return nil, errors.New("invalid userSubscriptionId")
+	}
+	now := common.GetTimestamp()
+	result := &AdminUserSubscriptionQuotaResult{}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var sub UserSubscription
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
+			return err
+		}
+		if sub.Status != "active" || sub.EndTime <= now {
+			return errors.New("subscription is not active")
+		}
+		if sub.AmountTotal <= 0 {
+			return errors.New("subscription quota is unlimited")
+		}
+		targetAmountUsed := int64(0)
+		if clearRemaining {
+			targetAmountUsed = sub.AmountTotal
+			if sub.AmountUsed > targetAmountUsed {
+				targetAmountUsed = sub.AmountUsed
+			}
+		}
+		result.UserId = sub.UserId
+		result.PlanId = sub.PlanId
+		result.SubscriptionId = sub.Id
+		result.AmountUsedBefore = sub.AmountUsed
+		result.AmountUsedAfter = targetAmountUsed
+		if sub.AmountUsed == targetAmountUsed {
+			return nil
+		}
+		return tx.Model(&sub).Updates(map[string]interface{}{
+			"amount_used": targetAmountUsed,
+			"updated_at":  now,
+		}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 type SubscriptionPreConsumeResult struct {
