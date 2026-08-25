@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -440,6 +441,12 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
+		return false
+	}
+	if errors.Is(openaiErr, context.Canceled) || errors.Is(openaiErr, context.DeadlineExceeded) {
+		return false
+	}
+	if c != nil && c.Request != nil && c.Request.Context().Err() != nil {
 		return false
 	}
 	if types.IsSkipRetryError(openaiErr) {
