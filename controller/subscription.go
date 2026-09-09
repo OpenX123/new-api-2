@@ -181,6 +181,10 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "购买上限不能为负数")
 		return
 	}
+	if req.Plan.WeeklyAmount < 0 {
+		common.ApiErrorMsg(c, "周额度不能为负数")
+		return
+	}
 	if req.Plan.TotalAmount < 0 {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
@@ -255,6 +259,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "购买上限不能为负数")
 		return
 	}
+	if req.Plan.WeeklyAmount < 0 {
+		common.ApiErrorMsg(c, "周额度不能为负数")
+		return
+	}
 	if req.Plan.TotalAmount < 0 {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
@@ -296,6 +304,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"waffo_pancake_product_id":   req.Plan.WaffoPancakeProductId,
 			"max_purchase_per_user":      req.Plan.MaxPurchasePerUser,
 			"total_amount":               req.Plan.TotalAmount,
+			"weekly_amount":              req.Plan.WeeklyAmount,
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"downgrade_group":            req.Plan.DowngradeGroup,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,

@@ -59,6 +59,7 @@ import {
 } from '../../api'
 import { formatTimestamp } from '../../lib'
 import type { PlanRecord, UserSubscriptionRecord } from '../../types'
+import { WeeklyQuotaUsage } from '../weekly-quota-usage'
 
 interface Props {
   open: boolean
@@ -339,9 +340,15 @@ export function UserSubscriptionsDialog(props: Props) {
                     const sub = record.subscription
                     const total = Number(sub.amount_total || 0)
                     const used = Number(sub.amount_used || 0)
-                    if (total <= 0) return t('Unlimited')
                     const remaining = Math.max(total - used, 0)
-                    return `${formatQuotaWithCurrency(remaining)} / ${formatQuotaWithCurrency(total)}`
+                    return (
+                      <div className='min-w-48'>
+                        {total > 0
+                          ? `${formatQuotaWithCurrency(remaining)} / ${formatQuotaWithCurrency(total)}`
+                          : t('Unlimited')}
+                        <WeeklyQuotaUsage subscription={sub} />
+                      </div>
+                    )
                   },
                 },
                 {

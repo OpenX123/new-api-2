@@ -59,6 +59,7 @@ const SubscriptionPurchaseModal = ({
 }) => {
   const plan = selectedPlan?.plan;
   const totalAmount = Number(plan?.total_amount || 0);
+  const weeklyAmount = Number(plan?.weekly_amount || 0);
   const { symbol, rate } = getCurrencyConfig();
   const price = plan ? Number(plan.price_amount || 0) : 0;
   const convertedPrice = price * rate;
@@ -146,6 +147,16 @@ const SubscriptionPurchaseModal = ({
                   )}
                 </div>
               </div>
+              {weeklyAmount > 0 && (
+                <div className='flex justify-between items-center'>
+                  <Text strong className='text-slate-700 dark:text-slate-200'>
+                    {t('周额度')}：
+                  </Text>
+                  <Text className='text-slate-900 dark:text-slate-100'>
+                    {renderQuota(weeklyAmount)}
+                  </Text>
+                </div>
+              )}
               {plan?.upgrade_group ? (
                 <div className='flex justify-between items-center'>
                   <Text strong className='text-slate-700 dark:text-slate-200'>

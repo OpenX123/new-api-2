@@ -89,6 +89,12 @@ const renderPlanTitle = (text, record, t) => {
         ) : (
           <Text>{t('不限')}</Text>
         )}
+        <Text type='tertiary'>{t('周额度')}</Text>
+        <Text>
+          {plan?.weekly_amount > 0
+            ? renderQuota(plan.weekly_amount)
+            : t('不限')}
+        </Text>
         <Text type='tertiary'>{t('升级分组')}</Text>
         <Text>{plan?.upgrade_group ? plan.upgrade_group : t('不升级')}</Text>
         <Text type='tertiary'>{t('购买上限')}</Text>
@@ -170,16 +176,18 @@ const renderEnabled = (text, record, t) => {
 
 const renderTotalAmount = (text, record, t) => {
   const total = Number(record?.plan?.total_amount || 0);
+  const weekly = Number(record?.plan?.weekly_amount || 0);
   return (
-    <Text type={total > 0 ? 'secondary' : 'tertiary'}>
-      {total > 0 ? (
-        <Tooltip content={`${t('原生额度')}：${total}`}>
-          <span>{renderQuota(total)}</span>
-        </Tooltip>
-      ) : (
-        t('不限')
+    <div>
+      <Text type={total > 0 ? 'secondary' : 'tertiary'}>
+        {total > 0 ? renderQuota(total) : t('不限')}
+      </Text>
+      {weekly > 0 && (
+        <Text type='tertiary' size='small' style={{ display: 'block' }}>
+          {t('周额度')}: {renderQuota(weekly)}
+        </Text>
       )}
-    </Text>
+    </div>
   );
 };
 

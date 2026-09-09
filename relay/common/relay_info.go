@@ -165,7 +165,8 @@ type RelayInfo struct {
 	SubscriptionPlanId    int
 	SubscriptionPlanTitle string
 	// RequestId is used for idempotent pre-consume/refund
-	RequestId string
+	RequestId             string
+	SubscriptionUsageTime int64
 	// SubscriptionAmountTotal / SubscriptionAmountUsedAfterPreConsume are used to compute remaining in logs.
 	SubscriptionAmountTotal               int64
 	SubscriptionAmountUsedAfterPreConsume int64

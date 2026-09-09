@@ -383,6 +383,10 @@ const SubscriptionPlansCard = ({
                     const subscription = sub.subscription;
                     const totalAmount = Number(subscription?.amount_total || 0);
                     const usedAmount = Number(subscription?.amount_used || 0);
+                    const weeklyAmount = Number(
+                      subscription?.weekly_amount || 0,
+                    );
+                    const weeklyUsed = Number(subscription?.weekly_used || 0);
                     const remainAmount =
                       totalAmount > 0
                         ? Math.max(0, totalAmount - usedAmount)
@@ -471,6 +475,12 @@ const SubscriptionPlansCard = ({
                             </span>
                           )}
                         </div>
+                        {weeklyAmount > 0 && (
+                          <div className='text-xs text-gray-500 mb-2'>
+                            {t('周额度')}: {renderQuota(weeklyUsed)}/
+                            {renderQuota(weeklyAmount)}
+                          </div>
+                        )}
                         {!isLast && <Divider margin={12} />}
                       </div>
                     );
@@ -490,6 +500,7 @@ const SubscriptionPlansCard = ({
               {plans.map((p, index) => {
                 const plan = p?.plan;
                 const totalAmount = Number(plan?.total_amount || 0);
+                const weeklyAmount = Number(plan?.weekly_amount || 0);
                 const { symbol, rate } = getCurrencyConfig();
                 const price = Number(plan?.price_amount || 0);
                 const convertedPrice = price * rate;
@@ -521,6 +532,11 @@ const SubscriptionPlansCard = ({
                         tooltip: `${t('原生额度')}：${totalAmount}`,
                       }
                     : { label: totalLabel },
+                  weeklyAmount > 0
+                    ? {
+                        label: `${t('周额度')}: ${renderQuota(weeklyAmount)}`,
+                      }
+                    : null,
                   limitLabel ? { label: limitLabel } : null,
                   upgradeLabel ? { label: upgradeLabel } : null,
                 ].filter(Boolean);

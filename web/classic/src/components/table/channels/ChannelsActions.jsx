@@ -44,6 +44,8 @@ const ChannelsActions = ({
   setCompactMode,
   idSort,
   setIdSort,
+  pinyinSort,
+  setPinyinSort,
   setEnableBatchDelete,
   enableTagMode,
   setEnableTagMode,
@@ -242,6 +244,10 @@ const ChannelsActions = ({
               onChange={(v) => {
                 localStorage.setItem('id-sort', v + '');
                 setIdSort(v);
+                if (v) {
+                  localStorage.setItem('channels-pinyin-sort', 'false');
+                  setPinyinSort(false);
+                }
                 const { searchKeyword, searchGroup, searchModel } =
                   getFormValues();
                 if (
@@ -258,6 +264,42 @@ const ChannelsActions = ({
                     activePage,
                     pageSize,
                     v,
+                  );
+                }
+              }}
+            />
+          </div>
+
+          <div className='flex items-center justify-between w-full md:w-auto'>
+            <Typography.Text strong className='mr-2'>
+              {t('使用拼音排序')}
+            </Typography.Text>
+            <Switch
+              size='small'
+              checked={pinyinSort}
+              onChange={(v) => {
+                localStorage.setItem('channels-pinyin-sort', v + '');
+                setPinyinSort(v);
+                if (v) {
+                  localStorage.setItem('id-sort', 'false');
+                  setIdSort(false);
+                }
+                const { searchKeyword, searchGroup, searchModel } =
+                  getFormValues();
+                if (
+                  searchKeyword === '' &&
+                  searchGroup === '' &&
+                  searchModel === ''
+                ) {
+                  loadChannels(activePage, pageSize, false, enableTagMode);
+                } else {
+                  searchChannels(
+                    enableTagMode,
+                    activeTypeKey,
+                    statusFilter,
+                    activePage,
+                    pageSize,
+                    false,
                   );
                 }
               }}

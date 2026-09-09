@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -169,6 +169,12 @@ export function useSubscriptionsColumns(): ColumnDef<PlanRecord>[] {
           return (
             <span className='text-muted-foreground'>
               {total > 0 ? formatQuota(total) : t('Unlimited')}
+              {(row.original.plan.weekly_amount ?? 0) > 0 && (
+                <span className='block text-xs'>
+                  {t('Weekly Quota')}:{' '}
+                  {formatQuota(row.original.plan.weekly_amount ?? 0)}
+                </span>
+              )}
             </span>
           )
         },

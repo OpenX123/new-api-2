@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/samber/lo"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -85,10 +88,12 @@ var channelSortColumns = map[string]string{
 	"test_time":     "test_time",
 }
 
+const channelSortByPinyin = "pinyin"
+
 func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) ChannelSortOptions {
 	normalizedSortBy := strings.ToLower(strings.TrimSpace(sortBy))
 	normalizedSortOrder := strings.ToLower(strings.TrimSpace(sortOrder))
-	if _, ok := channelSortColumns[normalizedSortBy]; !ok {
+	if _, ok := channelSortColumns[normalizedSortBy]; !ok && normalizedSortBy != channelSortByPinyin {
 		normalizedSortBy = ""
 		normalizedSortOrder = ""
 	} else if normalizedSortOrder != "asc" {
@@ -102,7 +107,14 @@ func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) Channel
 	}
 }
 
+func (options ChannelSortOptions) IsPinyinSort() bool {
+	return options.SortBy == channelSortByPinyin
+}
+
 func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
+	if options.IsPinyinSort() {
+		return query
+	}
 	if columnName, ok := channelSortColumns[options.SortBy]; ok {
 		return query.Order(clause.OrderByColumn{
 			Column: clause.Column{Name: columnName},
@@ -118,6 +130,34 @@ func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 	return query.Order(clause.OrderByColumn{
 		Column: clause.Column{Name: "priority"},
 		Desc:   true,
+	})
+}
+
+// SortChannelsByPinyin orders channel names with the Chinese collation rules,
+// which use pronunciation (pinyin) for Han characters. The ID fallback keeps
+// equal names deterministic across pages and database dialects.
+func SortChannelsByPinyin(channels []*Channel, descending bool) {
+	collator := collate.New(language.MustParse("zh-Hant-u-co-pinyin"))
+	sort.SliceStable(channels, func(i, j int) bool {
+		left, right := channels[i], channels[j]
+		if left == nil || right == nil {
+			return right == nil && left != nil
+		}
+
+		comparison := collator.CompareString(left.Name, right.Name)
+		if comparison == 0 {
+			comparison = strings.Compare(left.Name, right.Name)
+		}
+		if comparison == 0 {
+			if descending {
+				return left.Id > right.Id
+			}
+			return left.Id < right.Id
+		}
+		if descending {
+			return comparison > 0
+		}
+		return comparison < 0
 	})
 }
 
@@ -368,6 +408,31 @@ func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOpti
 	var channels []*Channel
 	var err error
 	order := resolveChannelSortOptions(idSort, sortOptions)
+	if order.IsPinyinSort() {
+		query := DB
+		if !selectAll {
+			query = query.Omit("key")
+		}
+		err = query.Find(&channels).Error
+		if err != nil {
+			return nil, err
+		}
+		SortChannelsByPinyin(channels, order.SortOrder != "asc")
+		if !selectAll {
+			if startIdx < 0 {
+				startIdx = 0
+			}
+			if startIdx > len(channels) {
+				startIdx = len(channels)
+			}
+			endIdx := len(channels)
+			if num > 0 && startIdx+num < endIdx {
+				endIdx = startIdx + num
+			}
+			channels = channels[startIdx:endIdx]
+		}
+		return channels, nil
+	}
 	if selectAll {
 		err = order.Apply(DB).Find(&channels).Error
 	} else {
@@ -384,6 +449,9 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...Ch
 		query = query.Omit("key")
 	}
 	err := query.Find(&channels).Error
+	if err == nil && order.IsPinyinSort() {
+		SortChannelsByPinyin(channels, order.SortOrder != "asc")
+	}
 	return channels, err
 }
 
@@ -416,6 +484,9 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 	err := order.Apply(baseQuery).Find(&channels).Error
 	if err != nil {
 		return nil, err
+	}
+	if order.IsPinyinSort() {
+		SortChannelsByPinyin(channels, order.SortOrder != "asc")
 	}
 	return channels, nil
 }
