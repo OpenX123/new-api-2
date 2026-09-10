@@ -33,6 +33,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type testResult struct {
@@ -173,6 +174,11 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 
 	//c.Request.Header.Set("Authorization", "Bearer "+channel.Key)
 	c.Request.Header.Set("Content-Type", "application/json")
+	testSessionID := uuid.NewString()
+	c.Request.Header.Set("X-Session-Id", testSessionID)
+	c.Request.Header.Set("X-Session-Affinity", testSessionID)
+	c.Request.Header.Set("X-OpenCode-Session", testSessionID)
+	c.Request.Header.Set("User-Agent", "new-api-channel-test/1.0")
 	c.Set("channel", channel.Type)
 	c.Set("base_url", channel.GetBaseURL())
 	group, _ := model.GetUserGroup(testUserID, false)
