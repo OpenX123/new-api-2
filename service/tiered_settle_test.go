@@ -387,7 +387,7 @@ func TestTryTieredSettle_RatioMode_EmptyBillingMode(t *testing.T) {
 
 func TestTryTieredSettle_ErrorFallbackToEstimatedQuotaAfterGroup(t *testing.T) {
 	info := &relaycommon.RelayInfo{
-		// Combined pre-consume can include another component such as vision.
+		// Settlement falls back to the frozen model estimate.
 		FinalPreConsumedQuota: 1_499,
 		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
 			BillingMode:              "tiered_expr",

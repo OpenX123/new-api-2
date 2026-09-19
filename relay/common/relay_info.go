@@ -86,27 +86,6 @@ type TokenCountMeta struct {
 	estimatePromptTokens int
 }
 
-// VisionBillingComponent holds the independently measured billing inputs for
-// a vision preflight call. ModelName is the physical upstream model;
-// VisionAlias is the public model name shown to the client.
-type VisionBillingComponent struct {
-	ChannelId             int
-	ModelName             string
-	VisionAlias           string
-	Components            []*VisionBillingComponent
-	Usage                 *dto.Usage
-	PriceData             types.PriceData
-	TieredBillingSnapshot *billingexpr.BillingSnapshot
-	BillingRequestInput   *billingexpr.RequestInput
-	EstimatedQuota        int
-	ActualQuota           int
-	LatencyMs             int64
-	CacheHit              bool
-	ImageCount            int
-	AttemptedChannelIds   []int
-	FailoverCount         int
-}
-
 type RelayInfo struct {
 	TokenId           int
 	TokenKey          string
@@ -201,7 +180,6 @@ type RelayInfo struct {
 	// captured at pre-consume time. Non-nil only when billing mode is "tiered_expr".
 	TieredBillingSnapshot *billingexpr.BillingSnapshot
 	BillingRequestInput   *billingexpr.RequestInput
-	VisionBilling         *VisionBillingComponent
 
 	Request dto.Request
 

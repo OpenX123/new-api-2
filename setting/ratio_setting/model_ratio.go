@@ -24,7 +24,7 @@ const (
 // 1 === ￥0.014 / 1k tokens
 
 var defaultModelRatio = map[string]float64{
-	// MiniMax-M3 standard tier; the vision bridge applies the priority multiplier.
+	// MiniMax-M3 standard tier.
 	"MiniMax-M3": 0.2,
 	"minimax-m3": 0.2,
 	//"midjourney":                50,

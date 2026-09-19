@@ -203,8 +203,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	var requestBody io.Reader
-	passThrough := (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) &&
-		!common.GetContextKeyBool(c, constant.ContextKeyVisionAugmented)
+	passThrough := model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled
 	if passThrough {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
@@ -235,11 +234,6 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			jsonData, err = relaycommon.ApplyParamOverrideWithRelayInfo(jsonData, info)
 			if err != nil {
 				return newAPIErrorFromParamOverride(err)
-			}
-		}
-		if common.GetContextKeyBool(c, constant.ContextKeyVisionAugmented) {
-			if err := relaycommon.EnsureClaudeRequestHasNoImages(jsonData); err != nil {
-				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 		}
 
@@ -276,9 +270,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
 	if newAPIError != nil {
 		// reset status code 重置状态码
-		if !helper.IsVisionTTFTError(newAPIError) {
-			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
-		}
+		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
 
