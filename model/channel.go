@@ -1052,9 +1052,6 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
-	if err := channelOtherSettings.VisionBridge.Validate(); err != nil {
-		return err
-	}
 	return nil
 }
 

@@ -92,7 +92,6 @@ type NewAPIError struct {
 	RelayError     any
 	skipRetry      bool
 	recordErrorLog *bool
-	localDeadline  bool
 	errorType      ErrorType
 	errorCode      ErrorCode
 	StatusCode     int
@@ -418,18 +417,6 @@ func ErrOptionWithNoRecordErrorLog() NewAPIErrorOptions {
 	return func(e *NewAPIError) {
 		e.recordErrorLog = common.GetPointer(false)
 	}
-}
-
-// ErrOptionWithLocalDeadline marks a gateway-enforced local deadline. It is
-// not evidence that the selected upstream channel is unhealthy.
-func ErrOptionWithLocalDeadline() NewAPIErrorOptions {
-	return func(e *NewAPIError) {
-		e.localDeadline = true
-	}
-}
-
-func IsLocalDeadlineError(err *NewAPIError) bool {
-	return err != nil && err.localDeadline
 }
 
 func ErrOptionWithStatusCode(statusCode int) NewAPIErrorOptions {
