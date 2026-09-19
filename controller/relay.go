@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -132,16 +133,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		return
 	}
-	storage, err := common.GetBodyStorage(c)
-	if err != nil {
-		newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-		return
-	}
-	rawBody, err := storage.Bytes()
-	if err != nil {
-		newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-		return
-	}
 	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
@@ -153,36 +144,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if relayInfo.Billing != nil {
 				relayInfo.Billing.Refund(c)
 			}
-			service.RecordFailedVisionCost(c, relayInfo, newAPIError)
 			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
 		}
 	}()
-	relayInfo.InitChannelMeta(c)
-	visionConfig := relayInfo.ChannelOtherSettings.VisionBridge
-	visionAlias, _ := visionConfig.Resolve(relayInfo.OriginModelName)
-	visionAlias, visionImageCount, err := middleware.InspectMultimodalRequest(c.Request.URL.Path, rawBody, visionAlias)
-	if err != nil {
-		newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-		return
-	}
-
-	if visionImageCount > 0 {
-		if _, fixed := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId); fixed {
-			newAPIError = types.NewErrorWithStatusCode(errors.New("image input is unavailable for fixed-channel tokens"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-			return
-		}
-		claudeRequest, ok := request.(*dto.ClaudeRequest)
-		if !ok {
-			newAPIError = types.NewErrorWithStatusCode(errors.New("vision bridge only supports Claude Messages"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-			return
-		}
-		newAPIError = augmentClaudeRequestWithVision(c, relayInfo, claudeRequest, visionConfig, visionAlias, visionImageCount)
-		if newAPIError != nil {
-			return
-		}
-		claudeRequest.Thinking = &dto.Thinking{Type: "disabled"}
-		claudeRequest.OutputConfig = nil
-	}
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
@@ -210,71 +174,17 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
-	priceInfo := relayInfo
-	if relayFormat == types.RelayFormatClaude {
-		if _, configured := relayInfo.ChannelOtherSettings.VisionBridge.Resolve(relayInfo.OriginModelName); configured {
-			claudeRequest, ok := request.(*dto.ClaudeRequest)
-			if !ok {
-				newAPIError = types.NewError(errors.New("invalid Claude request"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
-				return
-			}
-			pricingRequest, copyErr := common.DeepCopy(claudeRequest)
-			if copyErr != nil {
-				newAPIError = types.NewError(copyErr, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
-				return
-			}
-			relayInfo.InitChannelMeta(c)
-			if mapErr := helper.ModelMappedHelper(c, relayInfo, pricingRequest); mapErr != nil {
-				newAPIError = types.NewError(mapErr, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
-				return
-			}
-			mappedPriceInfo := *relayInfo
-			mappedPriceInfo.OriginModelName = relayInfo.UpstreamModelName
-			billingInput, inputErr := helper.BuildBillingExprRequestInputFromRequest(request, relayInfo.RequestHeaders)
-			if inputErr != nil {
-				newAPIError = types.NewError(inputErr, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry())
-				return
-			}
-			mappedPriceInfo.BillingRequestInput = &billingInput
-			priceInfo = &mappedPriceInfo
-		}
-	}
-	priceData, err := helper.ModelPriceHelper(c, priceInfo, tokens, meta)
+	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 		return
 	}
-	if priceInfo != relayInfo {
-		relayInfo.PriceData = priceData
-		relayInfo.TieredBillingSnapshot = priceInfo.TieredBillingSnapshot
-		relayInfo.BillingRequestInput = priceInfo.BillingRequestInput
-	}
-
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 
-	targetQuota := priceData.QuotaToPreConsume
-	if relayInfo.VisionBilling != nil {
-		visionQuota, _, visionErr := service.CalculateVisionActualQuota(relayInfo.VisionBilling)
-		relayInfo.VisionBilling.ActualQuota = visionQuota
-		if visionErr != nil {
-			logger.LogError(c, "error calculating vision pre-consume quota: "+visionErr.Error())
-		}
-		targetQuota = common.QuotaFromFloat(float64(targetQuota) + float64(visionQuota))
-	}
-
-	if priceData.FreeModel && targetQuota == 0 {
+	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
-	} else if relayInfo.Billing != nil {
-		if err := relayInfo.Billing.Reserve(targetQuota); err != nil {
-			if apiErr, ok := err.(*types.NewAPIError); ok {
-				newAPIError = apiErr
-			} else {
-				newAPIError = types.NewError(err, types.ErrorCodePreConsumeTokenQuotaFailed, types.ErrOptionWithSkipRetry())
-			}
-			return
-		}
 	} else {
-		newAPIError = service.PreConsumeBilling(c, targetQuota, relayInfo)
+		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
 		if newAPIError != nil {
 			return
 		}
@@ -442,14 +352,14 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if openaiErr == nil {
 		return false
 	}
-	if types.IsSkipRetryError(openaiErr) {
+	if errors.Is(openaiErr, context.Canceled) || errors.Is(openaiErr, context.DeadlineExceeded) {
 		return false
 	}
-	if common.GetContextKeyBool(c, constant.ContextKeyVisionAugmented) {
-		started := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
-		if !started.IsZero() && !time.Now().Before(started.Add(helper.VisionEndToEndTTFTTimeout)) {
-			return false
-		}
+	if c != nil && c.Request != nil && c.Request.Context().Err() != nil {
+		return false
+	}
+	if types.IsSkipRetryError(openaiErr) {
+		return false
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
@@ -754,6 +664,7 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
+		task.PrivateData.SubscriptionUsageTime = relayInfo.SubscriptionUsageTime
 		task.PrivateData.TokenId = relayInfo.TokenId
 		task.PrivateData.NodeName = common.NodeName
 		task.PrivateData.BillingContext = &model.TaskBillingContext{

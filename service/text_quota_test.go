@@ -2,9 +2,7 @@ package service
 
 import (
 	"errors"
-	"fmt"
 	"math"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -19,7 +17,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,6 +27,34 @@ type failingBillingSettler struct {
 func (s *failingBillingSettler) Settle(actualQuota int) error {
 	s.actualQuota = actualQuota
 	return errors.New("forced settlement failure")
+}
+
+func TestCalculateTextQuotaSummaryUsesResponsesInputTokenDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-4o",
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 2,
+			CacheRatio:      0.25,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 10,
+		TotalTokens:      110,
+		InputTokensDetails: &dto.InputTokenDetails{
+			CachedTokens: 40,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, 40, summary.CacheTokens)
+	require.Equal(t, 90, summary.Quota)
+	require.Zero(t, usage.PromptTokensDetails.CachedTokens)
 }
 
 func (*failingBillingSettler) Refund(*gin.Context)      {}
@@ -47,304 +72,6 @@ func TestDecimalToQuotaSaturation(t *testing.T) {
 
 	require.Equal(t, math.MinInt32, decimalToQuota(overflowing.Neg()))
 	require.Equal(t, 42, decimalToQuota(decimal.NewFromFloat(41.7)))
-}
-
-func TestCalculateVisionActualQuotaRatioPricesUpstreamCache(t *testing.T) {
-	usage := &dto.Usage{
-		PromptTokens:     100,
-		CompletionTokens: 10,
-		UsageSemantic:    "anthropic",
-		PromptTokensDetails: dto.InputTokenDetails{
-			CachedTokens:         80,
-			CachedCreationTokens: 30,
-		},
-		ClaudeCacheCreation5mTokens: 10,
-		ClaudeCacheCreation1hTokens: 20,
-	}
-	component := &relaycommon.VisionBillingComponent{
-		Usage: usage,
-		PriceData: types.PriceData{
-			ModelRatio:           0.3,
-			CompletionRatio:      4,
-			CacheRatio:           0.1,
-			CacheCreationRatio:   1.25,
-			CacheCreation5mRatio: 1.25,
-			CacheCreation1hRatio: 2,
-			GroupRatioInfo:       types.GroupRatioInfo{GroupRatio: 1},
-		},
-	}
-
-	quota, result, err := CalculateVisionActualQuota(component)
-
-	require.NoError(t, err)
-	require.Nil(t, result)
-	require.Equal(t, 60, quota)
-	require.Equal(t, 80, usage.PromptTokensDetails.CachedTokens)
-	require.Equal(t, 30, usage.PromptTokensDetails.CachedCreationTokens)
-}
-
-func TestCalculateVisionActualQuotaSaturatesUntrustedUsage(t *testing.T) {
-	component := &relaycommon.VisionBillingComponent{
-		Usage: &dto.Usage{
-			PromptTokens:  1,
-			UsageSemantic: "anthropic",
-			PromptTokensDetails: dto.InputTokenDetails{
-				CachedCreationTokens: math.MaxInt,
-			},
-			ClaudeCacheCreation5mTokens: math.MaxInt,
-			ClaudeCacheCreation1hTokens: math.MaxInt,
-		},
-		PriceData: types.PriceData{
-			ModelRatio:           1,
-			CompletionRatio:      1,
-			CacheCreationRatio:   1,
-			CacheCreation5mRatio: 0.1,
-			CacheCreation1hRatio: 0.1,
-			GroupRatioInfo:       types.GroupRatioInfo{GroupRatio: 1},
-		},
-	}
-
-	quota, result, err := CalculateVisionActualQuota(component)
-
-	require.NoError(t, err)
-	assert.Nil(t, result)
-	assert.Equal(t, math.MaxInt32, quota)
-}
-
-func TestCalculateVisionActualQuotaTieredPricesUpstreamCache(t *testing.T) {
-	expr := `tier("vision", p * 2 + c * 4 + cr * 0.2 + cc * 2.5 + cc1h * 4)`
-	component := &relaycommon.VisionBillingComponent{
-		Usage: &dto.Usage{
-			PromptTokens:     1_000_000,
-			CompletionTokens: 100_000,
-			UsageSemantic:    "anthropic",
-			PromptTokensDetails: dto.InputTokenDetails{
-				CachedTokens:         500_000,
-				CachedCreationTokens: 150_000,
-			},
-			ClaudeCacheCreation5mTokens: 100_000,
-			ClaudeCacheCreation1hTokens: 50_000,
-		},
-		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
-			BillingMode:  "tiered_expr",
-			ExprString:   expr,
-			ExprHash:     billingexpr.ExprHashString(expr),
-			GroupRatio:   1,
-			QuotaPerUnit: common.QuotaPerUnit,
-			ExprVersion:  billingexpr.ExprVersion(expr),
-		},
-	}
-
-	quota, result, err := CalculateVisionActualQuota(component)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, 1_475_000, quota)
-}
-
-func TestCalculateVisionActualQuotaSumsBatchesIndependently(t *testing.T) {
-	expr := `p <= 100 ? tier("small", p) : tier("large", p * 10)`
-	components := make([]*relaycommon.VisionBillingComponent, 2)
-	for i := range components {
-		components[i] = &relaycommon.VisionBillingComponent{
-			Usage: &dto.Usage{PromptTokens: 60},
-			TieredBillingSnapshot: &billingexpr.BillingSnapshot{
-				BillingMode:  "tiered_expr",
-				ExprString:   expr,
-				ExprHash:     billingexpr.ExprHashString(expr),
-				GroupRatio:   1,
-				QuotaPerUnit: common.QuotaPerUnit,
-				ExprVersion:  billingexpr.ExprVersion(expr),
-			},
-		}
-	}
-
-	quota, result, err := CalculateVisionActualQuota(&relaycommon.VisionBillingComponent{Components: components})
-
-	require.NoError(t, err)
-	require.Nil(t, result)
-	require.Equal(t, 60, quota)
-}
-
-func TestCalculateVisionActualQuotaCacheHitIsFree(t *testing.T) {
-	component := &relaycommon.VisionBillingComponent{
-		CacheHit:       true,
-		EstimatedQuota: 123,
-		Usage:          &dto.Usage{PromptTokens: 1000, CompletionTokens: 100},
-		PriceData: types.PriceData{
-			ModelRatio:      1,
-			CompletionRatio: 2,
-			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
-		},
-	}
-
-	quota, result, err := CalculateVisionActualQuota(component)
-
-	require.NoError(t, err)
-	require.Nil(t, result)
-	require.Zero(t, quota)
-}
-
-func TestCalculateVisionActualQuotaTieredFailureFallsBackToEstimate(t *testing.T) {
-	component := &relaycommon.VisionBillingComponent{
-		EstimatedQuota: 321,
-		Usage:          &dto.Usage{PromptTokens: 1000},
-		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
-			BillingMode:  "tiered_expr",
-			ExprString:   "invalid(",
-			ExprHash:     billingexpr.ExprHashString("invalid("),
-			GroupRatio:   1,
-			QuotaPerUnit: common.QuotaPerUnit,
-		},
-	}
-
-	quota, result, err := CalculateVisionActualQuota(component)
-
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Equal(t, 321, quota)
-}
-
-func TestCalculateVisionActualQuotaTieredUsesFrozenRequestInput(t *testing.T) {
-	expr := `has(header("x-vision-tier"), "priority") ? tier("vision", (p * 2 + c * 4) * 2) : tier("vision", p * 2 + c * 4)`
-	component := &relaycommon.VisionBillingComponent{
-		Usage: &dto.Usage{
-			PromptTokens:     1_000_000,
-			CompletionTokens: 100_000,
-			PromptTokensDetails: dto.InputTokenDetails{
-				CachedTokens: 500_000,
-			},
-		},
-		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
-			BillingMode:  "tiered_expr",
-			ExprString:   expr,
-			ExprHash:     billingexpr.ExprHashString(expr),
-			GroupRatio:   1,
-			QuotaPerUnit: common.QuotaPerUnit,
-			ExprVersion:  billingexpr.ExprVersion(expr),
-		},
-		BillingRequestInput: &billingexpr.RequestInput{
-			Headers: map[string]string{"x-vision-tier": "priority"},
-		},
-	}
-
-	quota, result, err := CalculateVisionActualQuota(component)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "vision", result.MatchedTier)
-	require.Equal(t, 2_400_000, quota)
-}
-
-func TestMergedTextVisionQuotaSaturates(t *testing.T) {
-	require.Equal(t, math.MaxInt32, mergedTextVisionQuota(math.MaxInt32, 1))
-	require.Equal(t, 30, mergedTextVisionQuota(10, 20))
-}
-
-func TestTieredFallbackDoesNotDoubleCountVisionReserve(t *testing.T) {
-	const mainEstimate = 100
-	const visionActual = 20
-	info := &relaycommon.RelayInfo{
-		FinalPreConsumedQuota: mainEstimate + visionActual,
-		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
-			BillingMode:              "tiered_expr",
-			ExprString:               "invalid(",
-			ExprHash:                 billingexpr.ExprHashString("invalid("),
-			EstimatedQuotaAfterGroup: mainEstimate,
-		},
-	}
-
-	ok, mainQuota, result := TryTieredSettle(info, billingexpr.TokenParams{P: 10})
-
-	require.True(t, ok)
-	require.Nil(t, result)
-	require.Equal(t, mainEstimate, mainQuota)
-	require.Equal(t, mainEstimate+visionActual, mergedTextVisionQuota(mainQuota, visionActual))
-}
-
-func TestPostTextConsumeQuotaAttributesVisionBatchesToActualChannels(t *testing.T) {
-	const userID, mainChannelID, visionChannelID, backupVisionChannelID = 9101, 9102, 9103, 9104
-	seedUser(t, userID, 100_000)
-	seedChannel(t, mainChannelID)
-	seedChannel(t, visionChannelID)
-	seedChannel(t, backupVisionChannelID)
-	t.Cleanup(func() {
-		model.DB.Delete(&model.User{}, userID)
-		model.DB.Delete(&model.Channel{}, []int{mainChannelID, visionChannelID, backupVisionChannelID})
-		model.LOG_DB.Where("request_id = ?", "vision-billing-test").Delete(&model.Log{})
-	})
-
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	ctx.Set(common.RequestIdKey, "vision-billing-test")
-	ctx.Set("token_name", "test-token")
-	mainUsage := &dto.Usage{PromptTokens: 100, CompletionTokens: 10}
-	relayInfo := &relaycommon.RelayInfo{
-		UserId:                userID,
-		UsingGroup:            "default",
-		OriginModelName:       "deepseek-main",
-		StartTime:             time.Now(),
-		FirstResponseTime:     time.Now(),
-		FinalPreConsumedQuota: 150,
-		ChannelMeta:           &relaycommon.ChannelMeta{ChannelId: mainChannelID},
-		PriceData: types.PriceData{
-			ModelRatio:      1,
-			CompletionRatio: 2,
-			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
-		},
-		VisionBilling: &relaycommon.VisionBillingComponent{
-			ChannelId:      visionChannelID,
-			ModelName:      "minimax-m3",
-			VisionAlias:    "deepseek-vision",
-			EstimatedQuota: 30,
-			LatencyMs:      800,
-			ImageCount:     2,
-			Components: []*relaycommon.VisionBillingComponent{
-				{
-					ChannelId: visionChannelID,
-					Usage:     &dto.Usage{PromptTokens: 20, CompletionTokens: 5},
-					PriceData: types.PriceData{ModelRatio: 0.5, CompletionRatio: 2,
-						GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}},
-				},
-				{
-					ChannelId: backupVisionChannelID,
-					Usage:     &dto.Usage{PromptTokens: 20, CompletionTokens: 5},
-					PriceData: types.PriceData{ModelRatio: 0.5, CompletionRatio: 2,
-						GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}},
-				},
-			},
-		},
-	}
-
-	PostTextConsumeQuota(ctx, relayInfo, mainUsage, nil)
-
-	var user model.User
-	require.NoError(t, model.DB.Select("used_quota", "request_count").First(&user, userID).Error)
-	assert.Equal(t, 150, user.UsedQuota)
-	assert.Equal(t, 1, user.RequestCount)
-
-	var mainChannel, visionChannel, backupVisionChannel model.Channel
-	require.NoError(t, model.DB.Select("used_quota").First(&mainChannel, mainChannelID).Error)
-	require.NoError(t, model.DB.Select("used_quota").First(&visionChannel, visionChannelID).Error)
-	require.NoError(t, model.DB.Select("used_quota").First(&backupVisionChannel, backupVisionChannelID).Error)
-	assert.Equal(t, int64(120), mainChannel.UsedQuota)
-	assert.Equal(t, int64(15), visionChannel.UsedQuota)
-	assert.Equal(t, int64(15), backupVisionChannel.UsedQuota)
-
-	var logs []model.Log
-	require.NoError(t, model.LOG_DB.Where("request_id = ?", "vision-billing-test").Find(&logs).Error)
-	require.Len(t, logs, 1)
-	assert.Equal(t, 150, logs[0].Quota)
-	other := map[string]interface{}{}
-	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
-	vision, ok := other["vision"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "minimax-m3", vision["model"])
-	assert.Equal(t, "deepseek-vision", vision["alias"])
-	assert.Equal(t, float64(30), vision["actual_quota"])
-	assert.Equal(t, false, vision["cache_hit"])
-
-	assert.Equal(t, 100, mainUsage.PromptTokens)
 }
 
 func TestPostTextConsumeQuotaSettlementFailureDoesNotRecordConsumption(t *testing.T) {
@@ -397,81 +124,6 @@ func TestPostTextConsumeQuotaSettlementFailureDoesNotRecordConsumption(t *testin
 	require.Equal(t, model.LogTypeError, logs[0].Type)
 	require.Zero(t, logs[0].Quota)
 	require.Contains(t, logs[0].Content, "billing settlement failed")
-}
-
-func TestRecordFailedVisionCostUsesErrorLogWithoutUserConsumption(t *testing.T) {
-	const userID, mainChannelID, visionChannelID = 9201, 9202, 9203
-	seedChannel(t, mainChannelID)
-	seedChannel(t, visionChannelID)
-	previousErrorLogEnabled := constant.ErrorLogEnabled
-	constant.ErrorLogEnabled = true
-	t.Cleanup(func() {
-		constant.ErrorLogEnabled = previousErrorLogEnabled
-		model.DB.Delete(&model.Channel{}, []int{mainChannelID, visionChannelID})
-		model.LOG_DB.Where("request_id = ?", "vision-failed-main-test").Delete(&model.Log{})
-	})
-
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ctx.Request = httptest.NewRequest("POST", "/v1/messages", nil)
-	ctx.Set(common.RequestIdKey, "vision-failed-main-test")
-	ctx.Set("token_name", "test-token")
-	relayInfo := &relaycommon.RelayInfo{
-		UserId:          userID,
-		TokenId:         77,
-		UsingGroup:      "default",
-		OriginModelName: "deepseek-main",
-		StartTime:       time.Now(),
-		IsStream:        true,
-		ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: mainChannelID},
-		VisionBilling: &relaycommon.VisionBillingComponent{
-			ChannelId:      visionChannelID,
-			ModelName:      "minimax-m3",
-			VisionAlias:    "deepseek-vision",
-			Usage:          &dto.Usage{PromptTokens: 40, CompletionTokens: 10},
-			EstimatedQuota: 30,
-			LatencyMs:      800,
-			ImageCount:     1,
-			PriceData: types.PriceData{
-				ModelRatio:      0.5,
-				CompletionRatio: 2,
-				GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
-			},
-		},
-	}
-	apiErr := types.NewErrorWithStatusCode(
-		fmt.Errorf("main upstream failed"),
-		types.ErrorCodeBadResponseStatusCode,
-		http.StatusBadGateway,
-	)
-
-	RecordFailedVisionCost(ctx, relayInfo, apiErr)
-
-	var mainChannel, visionChannel model.Channel
-	require.NoError(t, model.DB.Select("used_quota").First(&mainChannel, mainChannelID).Error)
-	require.NoError(t, model.DB.Select("used_quota").First(&visionChannel, visionChannelID).Error)
-	require.Zero(t, mainChannel.UsedQuota)
-	require.Equal(t, int64(30), visionChannel.UsedQuota)
-
-	var logs []model.Log
-	require.NoError(t, model.LOG_DB.Where("request_id = ?", "vision-failed-main-test").Find(&logs).Error)
-	require.Len(t, logs, 1)
-	require.Equal(t, model.LogTypeError, logs[0].Type)
-	require.Zero(t, logs[0].Quota)
-	require.Equal(t, visionChannelID, logs[0].ChannelId)
-
-	other := map[string]interface{}{}
-	require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
-	require.Equal(t, true, other["vision_cost_only"])
-	require.Equal(t, float64(0), other["user_quota"])
-	vision, ok := other["vision"].(map[string]interface{})
-	require.True(t, ok)
-	require.Equal(t, float64(30), vision["actual_quota"])
-
-	var consumeLogs int64
-	require.NoError(t, model.LOG_DB.Model(&model.Log{}).
-		Where("request_id = ? AND type = ?", "vision-failed-main-test", model.LogTypeConsume).
-		Count(&consumeLogs).Error)
-	require.Zero(t, consumeLogs)
 }
 
 func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {

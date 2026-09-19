@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -64,4 +65,33 @@ func TestRecordUsageLogsAlwaysStoreClientIP(t *testing.T) {
 	require.Len(t, logs, 2)
 	assert.Equal(t, "198.51.100.7", logs[0].Ip)
 	assert.Equal(t, "198.51.100.7", logs[1].Ip)
+}
+
+func TestRecordConsumeLogStoresUserAgent(t *testing.T) {
+	setupLogIPTestDB(t)
+	c := newLogIPTestContext("198.51.100.8")
+	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"api_key":"secret"}`))
+	c.Request.RemoteAddr = "198.51.100.8:12345"
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("User-Agent", "Codex Desktop/0.147.0")
+
+	RecordConsumeLog(c, 1, RecordConsumeLogParams{Other: map[string]interface{}{"existing": true}})
+
+	var log Log
+	require.NoError(t, LOG_DB.First(&log).Error)
+	assert.JSONEq(t, `{"existing":true,"user_agent":"Codex Desktop/0.147.0","request_body":{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"api_key":"[已隐藏]"}}`, log.Other)
+}
+
+func TestGetAllLogsOmitsRequestBody(t *testing.T) {
+	setupLogIPTestDB(t)
+	require.NoError(t, LOG_DB.Create(&Log{
+		CreatedAt: 1,
+		Other:     `{"request_body":{"messages":[{"content":"large payload"}]},"user_agent":"Codex Desktop/0.147.0"}`,
+	}).Error)
+
+	logs, total, err := GetAllLogs(LogTypeUnknown, 0, 0, "", "", "", 0, 50, 0, "", "", "")
+	require.NoError(t, err)
+	require.Len(t, logs, 1)
+	assert.EqualValues(t, 1, total)
+	assert.JSONEq(t, `{"user_agent":"Codex Desktop/0.147.0"}`, logs[0].Other)
 }

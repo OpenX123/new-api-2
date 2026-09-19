@@ -44,6 +44,33 @@ func applyUpstreamContentLength(req *http.Request, info *common.RelayInfo) {
 	}
 }
 
+// applyUpstreamGetBody populates req.GetBody when the upstream body is wrapped
+// in a BodyStorage (see relay/common/outbound_body.go).
+//
+// net/http.NewRequest only auto-populates GetBody for *bytes.Reader,
+// *bytes.Buffer and *strings.Reader. When the body is a type-erased io.Reader
+// (which is the case for ReaderOnly(BodyStorage)), GetBody would otherwise stay
+// nil, and the HTTP/2 transport cannot transparently retry the request once the
+// upstream resets the stream after the body was already written; the request
+// then fails with "http2: Transport: cannot retry err ... after Request.Body
+// was written; define Request.GetBody to avoid this error".
+func applyUpstreamGetBody(req *http.Request, info *common.RelayInfo) {
+	if info == nil || info.UpstreamRequestGetBody == nil {
+		return
+	}
+	if req.GetBody == nil {
+		req.GetBody = info.UpstreamRequestGetBody
+	}
+}
+
+// ApplyUpstreamBodyMetadata restores metadata that net/http cannot infer when
+// a BodyStorage is exposed through a type-erased reader. Provider adaptors
+// that construct requests directly should call this before sending them.
+func ApplyUpstreamBodyMetadata(req *http.Request, info *common.RelayInfo) {
+	applyUpstreamContentLength(req, info)
+	applyUpstreamGetBody(req, info)
+}
+
 func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Header) {
 	if info.RelayMode == constant.RelayModeAudioTranscription || info.RelayMode == constant.RelayModeAudioTranslation {
 		// multipart/form-data
@@ -374,7 +401,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
-	applyUpstreamContentLength(req, info)
+	ApplyUpstreamBodyMetadata(req, info)
 	headers := req.Header
 	err = a.SetupRequestHeader(c, &headers, info)
 	if err != nil {
@@ -441,7 +468,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
-	applyUpstreamContentLength(req, info)
+	ApplyUpstreamBodyMetadata(req, info)
 	// set form data
 	req.Header.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	headers := req.Header
@@ -571,6 +598,13 @@ func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequest(c, req, info)
 }
+
+// keepUpstreamRedirectResponse stops net/http from following redirects while
+// returning the upstream 3xx response to the relay without an extra error.
+func keepUpstreamRedirectResponse(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	var client *http.Client
 	var err error
@@ -582,6 +616,9 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	} else {
 		client = service.GetHttpClient()
 	}
+	// The clients are shared, so customize redirect behavior on a shallow copy.
+	relayClient := *client
+	relayClient.CheckRedirect = keepUpstreamRedirectResponse
 
 	var stopPinger context.CancelFunc
 	var pingerDone <-chan struct{}
@@ -603,7 +640,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
-	resp, err := client.Do(req)
+	resp, err := relayClient.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
@@ -630,10 +667,15 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
-	applyUpstreamContentLength(req, info)
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(requestBody), nil
-	}
+	ApplyUpstreamBodyMetadata(req, info)
+	// Do NOT wrap requestBody in a GetBody closure here: returning the same
+	// (already consumed) reader would make any transport-level retry silently
+	// replay an empty body. http.NewRequest already derives a correct,
+	// snapshot-based GetBody for *bytes.Reader/Buffer/strings.Reader bodies
+	// (which most task adaptors pass in); for type-erased readers,
+	// ApplyUpstreamBodyMetadata wires a replayable body when one is available.
+	// Otherwise GetBody stays nil so the transport fails the retry instead of
+	// sending a corrupted request.
 
 	err = a.BuildRequestHeader(c, req, info)
 	if err != nil {

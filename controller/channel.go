@@ -144,6 +144,9 @@ func GetAllChannels(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签渠道失败，请稍后重试"})
 				return
 			}
+			if sortOptions.IsPinyinSort() {
+				model.SortChannelsByPinyin(tagChannels, sortOptions.SortOrder != "asc")
+			}
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
@@ -153,15 +156,22 @@ func GetAllChannels(c *gin.Context) {
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
-			Limit(pageInfo.GetPageSize()).
-			Offset(pageInfo.GetStartIdx()).
-			Omit("key").
-			Find(&channelData).Error
-		if err != nil {
+		query := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).Omit("key")
+		if !sortOptions.IsPinyinSort() {
+			query = query.
+				Limit(pageInfo.GetPageSize()).
+				Offset(pageInfo.GetStartIdx())
+		}
+		if err := query.Find(&channelData).Error; err != nil {
 			common.SysError("failed to get channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道列表失败，请稍后重试"})
 			return
+		}
+		if sortOptions.IsPinyinSort() {
+			model.SortChannelsByPinyin(channelData, sortOptions.SortOrder != "asc")
+			startIdx := min(max(pageInfo.GetStartIdx(), 0), len(channelData))
+			endIdx := startIdx + min(max(pageInfo.GetPageSize(), 0), len(channelData)-startIdx)
+			channelData = channelData[startIdx:endIdx]
 		}
 	}
 
@@ -296,6 +306,9 @@ func SearchChannels(c *gin.Context) {
 						"message": err.Error(),
 					})
 					return
+				}
+				if sortOptions.IsPinyinSort() {
+					model.SortChannelsByPinyin(tagChannels, sortOptions.SortOrder != "asc")
 				}
 				channelData = append(channelData, tagChannels...)
 			}

@@ -266,6 +266,7 @@ export interface MultiKeyStatusResponse {
 
 export type ChannelSortBy =
   | 'id'
+  | 'pinyin'
   | 'name'
   | 'priority'
   | 'balance'

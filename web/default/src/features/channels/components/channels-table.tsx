@@ -90,6 +90,8 @@ export function ChannelsTable() {
   const {
     enableTagMode,
     idSort,
+    pinyinSort,
+    setPinyinSort,
     batchMode,
     sensitiveVisible,
     setSensitiveVisible,
@@ -177,23 +179,31 @@ export function ChannelsTable() {
   const shouldSearch = Boolean(globalFilter?.trim() || modelFilter.trim())
 
   const sortParams = useMemo(() => {
-    const activeSort = sorting[0]
-    if (
-      !activeSort ||
-      !CHANNEL_SORTABLE_COLUMNS.has(activeSort.id as ChannelSortBy)
-    ) {
-      return {}
+    if (pinyinSort) {
+      return { sort_by: 'pinyin', sort_order: 'asc' } as const
     }
 
-    return {
-      sort_by: activeSort.id as ChannelSortBy,
-      sort_order: activeSort.desc ? 'desc' : 'asc',
-    } as const
-  }, [sorting])
+    const activeSort = sorting[0]
+    if (
+      activeSort &&
+      CHANNEL_SORTABLE_COLUMNS.has(activeSort.id as ChannelSortBy)
+    ) {
+      return {
+        sort_by: activeSort.id as ChannelSortBy,
+        sort_order: activeSort.desc ? 'desc' : 'asc',
+      } as const
+    }
+
+    return {}
+  }, [pinyinSort, sorting])
 
   const handleSortingChange: OnChangeFn<SortingState> = (updater) => {
     setSorting((previous) => {
       const next = typeof updater === 'function' ? updater(previous) : updater
+      if (next.length > 0 && pinyinSort) {
+        localStorage.setItem('channels-pinyin-sort', 'false')
+        setPinyinSort(false)
+      }
       if (pagination.pageIndex > 0) {
         onPaginationChange({ ...pagination, pageIndex: 0 })
       }

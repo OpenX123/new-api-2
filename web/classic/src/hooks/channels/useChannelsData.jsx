@@ -49,6 +49,7 @@ export const useChannelsData = () => {
   const [loading, setLoading] = useState(true);
   const [activePage, setActivePage] = useState(1);
   const [idSort, setIdSort] = useState(false);
+  const [pinyinSort, setPinyinSort] = useState(false);
   const [searching, setSearching] = useState(false);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [channelCount, setChannelCount] = useState(0);
@@ -146,6 +147,11 @@ export const useChannelsData = () => {
   // Initialize from localStorage
   useEffect(() => {
     const localIdSort = localStorage.getItem('id-sort') === 'true';
+    const localPinyinSort =
+      localStorage.getItem('channels-pinyin-sort') === 'true';
+    if (localPinyinSort) {
+      localStorage.setItem('id-sort', 'false');
+    }
     const localPageSize =
       parseInt(localStorage.getItem('page-size')) || ITEMS_PER_PAGE;
     const localEnableTagMode =
@@ -153,12 +159,18 @@ export const useChannelsData = () => {
     const localEnableBatchDelete =
       localStorage.getItem('enable-batch-delete') === 'true';
 
-    setIdSort(localIdSort);
+    setIdSort(localIdSort && !localPinyinSort);
+    setPinyinSort(localPinyinSort);
     setPageSize(localPageSize);
     setEnableTagMode(localEnableTagMode);
     setEnableBatchDelete(localEnableBatchDelete);
 
-    loadChannels(1, localPageSize, localIdSort, localEnableTagMode)
+    loadChannels(
+      1,
+      localPageSize,
+      localIdSort && !localPinyinSort,
+      localEnableTagMode,
+    )
       .then()
       .catch((reason) => {
         showError(reason);
@@ -346,8 +358,12 @@ export const useChannelsData = () => {
     setLoading(true);
     const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
     const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+    const pinyinParam =
+      localStorage.getItem('channels-pinyin-sort') === 'true'
+        ? '&sort_by=pinyin&sort_order=asc'
+        : '';
     const res = await API.get(
-      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
+      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}${pinyinParam}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
     );
 
     if (res === undefined || reqId !== requestCounter.current) {
@@ -398,8 +414,12 @@ export const useChannelsData = () => {
 
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
       const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+      const pinyinParam =
+        localStorage.getItem('channels-pinyin-sort') === 'true'
+          ? '&sort_by=pinyin&sort_order=asc'
+          : '';
       const res = await API.get(
-        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
+        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}${pinyinParam}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -1143,6 +1163,8 @@ export const useChannelsData = () => {
     channelCount,
     groupOptions,
     idSort,
+    pinyinSort,
+    setPinyinSort,
     enableTagMode,
     enableBatchDelete,
     statusFilter,

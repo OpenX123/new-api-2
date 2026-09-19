@@ -181,6 +181,10 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "购买上限不能为负数")
 		return
 	}
+	if req.Plan.WeeklyAmount < 0 {
+		common.ApiErrorMsg(c, "周额度不能为负数")
+		return
+	}
 	if req.Plan.TotalAmount < 0 {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
@@ -255,6 +259,10 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "购买上限不能为负数")
 		return
 	}
+	if req.Plan.WeeklyAmount < 0 {
+		common.ApiErrorMsg(c, "周额度不能为负数")
+		return
+	}
 	if req.Plan.TotalAmount < 0 {
 		common.ApiErrorMsg(c, "总额度不能为负数")
 		return
@@ -296,6 +304,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"waffo_pancake_product_id":   req.Plan.WaffoPancakeProductId,
 			"max_purchase_per_user":      req.Plan.MaxPurchasePerUser,
 			"total_amount":               req.Plan.TotalAmount,
+			"weekly_amount":              req.Plan.WeeklyAmount,
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"downgrade_group":            req.Plan.DowngradeGroup,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
@@ -491,4 +500,40 @@ func AdminDeleteUserSubscription(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+func AdminResetUserSubscriptionQuota(c *gin.Context) {
+	adminUpdateUserSubscriptionQuota(c, false)
+}
+
+func AdminClearUserSubscriptionQuota(c *gin.Context) {
+	adminUpdateUserSubscriptionQuota(c, true)
+}
+
+func adminUpdateUserSubscriptionQuota(c *gin.Context, clearRemaining bool) {
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	var result *model.AdminUserSubscriptionQuotaResult
+	var err error
+	action := "subscription.quota_reset"
+	if clearRemaining {
+		result, err = model.AdminClearUserSubscriptionQuota(subId)
+		action = "subscription.quota_clear"
+	} else {
+		result, err = model.AdminResetUserSubscriptionQuota(subId)
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAuditFor(c, result.UserId, action, map[string]interface{}{
+		"subscription_id":    result.SubscriptionId,
+		"plan_id":            result.PlanId,
+		"amount_used_before": result.AmountUsedBefore,
+		"amount_used_after":  result.AmountUsedAfter,
+	})
+	common.ApiSuccess(c, result)
 }

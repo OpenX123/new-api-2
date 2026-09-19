@@ -29,6 +29,7 @@ import {
   SortAsc,
   RefreshCw,
   ArrowUpFromLine,
+  Languages,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -75,6 +76,8 @@ export function ChannelsPrimaryButtons() {
     setEnableTagMode,
     idSort,
     setIdSort,
+    pinyinSort,
+    setPinyinSort,
     batchMode,
     setBatchMode,
     upstream,
@@ -98,6 +101,19 @@ export function ChannelsPrimaryButtons() {
   const handleIdSortToggle = (checked: boolean) => {
     localStorage.setItem('channels-id-sort', String(checked))
     setIdSort(checked)
+    if (checked) {
+      localStorage.setItem('channels-pinyin-sort', 'false')
+      setPinyinSort(false)
+    }
+  }
+
+  const handlePinyinSortToggle = (checked: boolean) => {
+    localStorage.setItem('channels-pinyin-sort', String(checked))
+    setPinyinSort(checked)
+    if (checked) {
+      localStorage.setItem('channels-id-sort', 'false')
+      setIdSort(false)
+    }
   }
 
   const handleBatchModeToggle = (checked: boolean) => {
@@ -144,6 +160,18 @@ export function ChannelsPrimaryButtons() {
             id='id-sort'
             checked={idSort}
             onCheckedChange={handleIdSortToggle}
+          />
+        </div>
+
+        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
+          <Languages className='text-muted-foreground h-4 w-4' />
+          <Label htmlFor='pinyin-sort' className='cursor-pointer text-sm'>
+            {t('Sort by Pinyin')}
+          </Label>
+          <Switch
+            id='pinyin-sort'
+            checked={pinyinSort}
+            onCheckedChange={handlePinyinSortToggle}
           />
         </div>
 
@@ -203,6 +231,15 @@ export function ChannelsPrimaryButtons() {
             >
               <SortAsc className='mr-2 h-4 w-4' />
               {t('Sort by ID')}
+            </DropdownMenuCheckboxItem>
+
+            <DropdownMenuCheckboxItem
+              className='sm:hidden'
+              checked={pinyinSort}
+              onCheckedChange={handlePinyinSortToggle}
+            >
+              <Languages className='mr-2 h-4 w-4' />
+              {t('Sort by Pinyin')}
             </DropdownMenuCheckboxItem>
 
             <DropdownMenuSeparator className='sm:hidden' />

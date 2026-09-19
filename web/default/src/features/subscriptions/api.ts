@@ -101,6 +101,36 @@ export async function invalidateUserSubscription(
   return res.data
 }
 
+export async function resetUserSubscriptionQuota(subId: number): Promise<
+  ApiResponse<{
+    user_id: number
+    plan_id: number
+    subscription_id: number
+    amount_used_before: number
+    amount_used_after: number
+  }>
+> {
+  const res = await api.post(
+    `/api/subscription/admin/user_subscriptions/${subId}/reset_quota`
+  )
+  return res.data
+}
+
+export async function clearUserSubscriptionQuota(subId: number): Promise<
+  ApiResponse<{
+    user_id: number
+    plan_id: number
+    subscription_id: number
+    amount_used_before: number
+    amount_used_after: number
+  }>
+> {
+  const res = await api.post(
+    `/api/subscription/admin/user_subscriptions/${subId}/clear_quota`
+  )
+  return res.data
+}
+
 export async function deleteUserSubscription(
   subId: number
 ): Promise<ApiResponse> {

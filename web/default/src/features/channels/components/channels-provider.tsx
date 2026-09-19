@@ -60,6 +60,8 @@ type ChannelsContextType = {
   setEnableTagMode: (enabled: boolean) => void
   idSort: boolean
   setIdSort: (enabled: boolean) => void
+  pinyinSort: boolean
+  setPinyinSort: (enabled: boolean) => void
   batchMode: boolean
   setBatchMode: (enabled: boolean) => void
   sensitiveVisible: boolean
@@ -87,7 +89,17 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem('enable-tag-mode') === 'true'
   })
   const [idSort, setIdSort] = useState(() => {
-    return localStorage.getItem('channels-id-sort') === 'true'
+    return (
+      localStorage.getItem('channels-pinyin-sort') !== 'true' &&
+      localStorage.getItem('channels-id-sort') === 'true'
+    )
+  })
+  const [pinyinSort, setPinyinSort] = useState(() => {
+    const enabled = localStorage.getItem('channels-pinyin-sort') === 'true'
+    if (enabled) {
+      localStorage.setItem('channels-id-sort', 'false')
+    }
+    return enabled
   })
   const [batchMode, setBatchMode] = useState(false)
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
@@ -113,6 +125,8 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       setEnableTagMode,
       idSort,
       setIdSort,
+      pinyinSort,
+      setPinyinSort,
       batchMode,
       setBatchMode,
       sensitiveVisible,
@@ -125,6 +139,7 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       currentTag,
       enableTagMode,
       idSort,
+      pinyinSort,
       batchMode,
       sensitiveVisible,
       upstream,

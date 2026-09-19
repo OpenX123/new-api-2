@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -113,7 +114,22 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 	}
 }
 
+func removeRequestBodies(logs []*Log) {
+	for _, log := range logs {
+		otherMap, err := common.StrToMap(log.Other)
+		if err != nil {
+			continue
+		}
+		if _, ok := otherMap["request_body"]; !ok {
+			continue
+		}
+		delete(otherMap, "request_body")
+		log.Other = common.MapToJsonStr(otherMap)
+	}
+}
+
 func formatUserLogs(logs []*Log, startIdx int) {
+	removeRequestBodies(logs)
 	for i := range logs {
 		logs[i].ChannelName = ""
 		var otherMap map[string]interface{}
@@ -331,6 +347,61 @@ type RecordConsumeLogParams struct {
 	Other            map[string]interface{} `json:"other"`
 }
 
+const maxRequestBodyAuditSourceBytes = 1 << 20
+const maxLoggedRequestBodyBytes = 64 << 10
+
+func requestBodyForLog(c *gin.Context) interface{} {
+	storage, err := common.GetBodyStorage(c)
+	if err != nil || storage.Size() == 0 {
+		return nil
+	}
+	if storage.Size() > maxRequestBodyAuditSourceBytes {
+		return fmt.Sprintf("[请求体超过 1MB，未记录；原始大小 %d 字节]", storage.Size())
+	}
+	body, err := storage.Bytes()
+	if err != nil {
+		return nil
+	}
+	var value interface{}
+	if err := common.Unmarshal(body, &value); err != nil {
+		return "[非 JSON 请求体，未记录]"
+	}
+	value = redactRequestBody(value)
+	encoded, err := common.Marshal(value)
+	if err != nil || len(encoded) <= maxLoggedRequestBodyBytes {
+		return value
+	}
+	truncated := encoded[:maxLoggedRequestBodyBytes]
+	for len(truncated) > 0 && !utf8.Valid(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return string(truncated) + "\n…[脱敏后的请求体已截断至 64KB]"
+}
+
+func redactRequestBody(value interface{}) interface{} {
+	switch value := value.(type) {
+	case map[string]interface{}:
+		for key, item := range value {
+			lower := strings.ToLower(key)
+			if lower == "api_key" || lower == "authorization" || lower == "access_token" || lower == "refresh_token" || lower == "token" || strings.Contains(lower, "password") || strings.Contains(lower, "secret") {
+				value[key] = "[已隐藏]"
+			} else {
+				value[key] = redactRequestBody(item)
+			}
+		}
+	case []interface{}:
+		for i, item := range value {
+			value[i] = redactRequestBody(item)
+		}
+	case string:
+		runes := []rune(value)
+		if len(runes) > 4096 {
+			return fmt.Sprintf("%s…[省略 %d 字符]", string(runes[:4096]), len(runes)-4096)
+		}
+	}
+	return value
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
@@ -340,6 +411,18 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	createdAt := common.GetTimestamp()
+	if userAgent := c.Request.UserAgent(); userAgent != "" {
+		if params.Other == nil {
+			params.Other = map[string]interface{}{}
+		}
+		params.Other["user_agent"] = userAgent
+	}
+	if requestBody := requestBodyForLog(c); requestBody != nil {
+		if params.Other == nil {
+			params.Other = map[string]interface{}{}
+		}
+		params.Other["request_body"] = requestBody
+	}
 	otherStr := common.MapToJsonStr(params.Other)
 	log := &Log{
 		UserId:            userId,
@@ -491,6 +574,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if err != nil {
 		return nil, 0, err
 	}
+	removeRequestBodies(logs)
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		assignDisplayLogIds(logs, startIdx)
 	}

@@ -106,6 +106,25 @@ export function parseLogOther(other: string): LogOtherData | null {
   }
 }
 
+export function getReasoningEffortVariant(
+  effort: string | undefined
+): StatusBadgeProps['variant'] {
+  switch (effort?.trim().toLowerCase()) {
+    case 'max':
+    case 'xhigh':
+    case 'high':
+      return 'orange'
+    case 'medium':
+      return 'yellow'
+    case 'low':
+    case 'minimal':
+      return 'green'
+    case 'none':
+    default:
+      return 'grey'
+  }
+}
+
 /**
  * Get time color based on duration (in seconds)
  */
@@ -325,6 +344,10 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.topup_complete': 'Completed top-up order for the user',
   'user.reset_passkey': 'Reset the user passkey',
   'user.oauth_unbind': 'Removed an OAuth binding for the user',
+  'subscription.quota_clear':
+    'Cleared subscription {{subscription_id}} remaining quota (used {{amount_used_before}} to {{amount_used_after}})',
+  'subscription.quota_reset':
+    'Reset subscription {{subscription_id}} quota from {{amount_used_before}} to 0',
   // System settings
   'option.update': 'Updated system setting {{key}}',
   'option.payment_compliance': 'Confirmed payment compliance',
