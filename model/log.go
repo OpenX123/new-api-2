@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -351,6 +352,9 @@ const maxRequestBodyAuditSourceBytes = 1 << 20
 const maxLoggedRequestBodyBytes = 64 << 10
 
 func requestBodyForLog(c *gin.Context) interface{} {
+	if !constant.LogRequestBodyEnabled {
+		return nil
+	}
 	storage, err := common.GetBodyStorage(c)
 	if err != nil || storage.Size() == 0 {
 		return nil
