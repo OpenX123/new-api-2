@@ -16,6 +16,7 @@ var NotifyLimitCount int
 var NotificationLimitDurationMinute int
 var GenerateDefaultToken bool
 var ErrorLogEnabled bool
+var LogRequestBodyEnabled bool
 var TaskQueryLimit int
 var TaskTimeoutMinutes int
 

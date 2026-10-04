@@ -33,28 +33,28 @@ func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {
 	require.Empty(t, headers)
 }
 
-func TestProcessHeaderOverride_ChannelTestSkipsClientHeaderPlaceholder(t *testing.T) {
+func TestProcessHeaderOverride_ChannelTestResolvesClientSessionHeader(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	ctx.Request.Header.Set("X-Trace-Id", "trace-123")
+	const sessionID = "9ce28b21-4b7e-4f51-91c2-a5d45b315830"
+	ctx.Request.Header.Set("X-Session-Id", sessionID)
 
 	info := &relaycommon.RelayInfo{
 		IsChannelTest: true,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			HeadersOverride: map[string]any{
-				"X-Upstream-Trace": "{client_header:X-Trace-Id}",
+				"X-Opencode-Session": "{client_header:X-Session-Id}",
 			},
 		},
 	}
 
 	headers, err := processHeaderOverride(info, ctx)
 	require.NoError(t, err)
-	_, ok := headers["x-upstream-trace"]
-	require.False(t, ok)
+	require.Equal(t, sessionID, headers["x-opencode-session"])
 }
 
 func TestProcessHeaderOverride_NonTestKeepsClientHeaderPlaceholder(t *testing.T) {
