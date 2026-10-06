@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -181,7 +182,7 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 // PreConsume — 统一预扣费入口（含信任额度旁路）
 // ---------------------------------------------------------------------------
 
-// preConsume 执行预扣费：信任检查 -> 令牌预扣 -> 资金来源预扣。
+// preConsume 执行预扣费；按可用额度预留的订阅先锁定资金，再按实际预留扣令牌。
 // 任一步骤失败时原子回滚已完成的步骤。
 func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIError {
 	effectiveQuota := quota
@@ -191,20 +192,41 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		s.trusted = true
 		effectiveQuota = 0
 		logger.LogInfo(c, fmt.Sprintf("用户 %d 额度充足, 信任且不需要预扣费 (funding=%s)", s.relayInfo.UserId, s.funding.Source()))
-	} else if effectiveQuota > 0 {
+	}
+
+	// Partial subscription reservations are determined atomically by the database.
+	// Reserve the token only for that actual amount, and refund funding if it fails.
+	sub, isSubscription := s.funding.(*SubscriptionFunding)
+	partialSubscription := isSubscription && sub.allowPartial
+	var fundingErr error
+	if partialSubscription {
+		fundingErr = sub.PreConsume(effectiveQuota)
+		if fundingErr == nil {
+			effectiveQuota = int(sub.preConsumed)
+		}
+	}
+	if effectiveQuota > 0 && fundingErr == nil {
 		logger.LogInfo(c, fmt.Sprintf("用户 %d 需要预扣费 %s (funding=%s)", s.relayInfo.UserId, logger.FormatQuota(effectiveQuota), s.funding.Source()))
 	}
 
 	// ---- 1) 预扣令牌额度 ----
-	if effectiveQuota > 0 {
+	if effectiveQuota > 0 && fundingErr == nil {
 		if err := PreConsumeTokenQuota(s.relayInfo, effectiveQuota); err != nil {
+			if partialSubscription {
+				if refundErr := sub.Refund(); refundErr != nil {
+					return types.NewError(fmt.Errorf("subscription reservation rollback failed: %w", refundErr), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+				}
+			}
 			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		s.tokenConsumed = effectiveQuota
 	}
 
 	// ---- 2) 预扣资金来源 ----
-	if err := s.funding.PreConsume(effectiveQuota); err != nil {
+	if !partialSubscription {
+		fundingErr = s.funding.PreConsume(effectiveQuota)
+	}
+	if err := fundingErr; err != nil {
 		// 预扣费失败，回滚令牌额度
 		if s.tokenConsumed > 0 && !s.relayInfo.IsPlayground {
 			if rollbackErr := model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed); rollbackErr != nil {
@@ -457,10 +479,11 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				userId:    relayInfo.UserId,
 				modelName: relayInfo.OriginModelName,
 				amount:    subConsume,
+				// Saturated estimates and known fixed costs must still require full funding.
+				allowPartial: !relayInfo.ForcePreConsume && !relayInfo.PriceData.UsePrice && subConsume < math.MaxInt32,
 			},
 		}
-		// 必须传 subConsume 而非 preConsumedQuota，保证 SubscriptionFunding.amount、
-		// preConsume 参数和 FinalPreConsumedQuota 三者一致，避免订阅多扣费。
+		// preConsume synchronizes both token and session amounts with the actual reservation.
 		if apiErr := session.preConsume(c, int(subConsume)); apiErr != nil {
 			return nil, apiErr
 		}

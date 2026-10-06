@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"net/http/httptest"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,6 +24,104 @@ var (
 	billingSubscriptionTablesOnce sync.Once
 	billingSubscriptionTablesErr  error
 )
+
+func TestBillingSessionSubscriptionEstimateExceedsAvailableQuota(t *testing.T) {
+	for _, weekly := range []bool{false, true} {
+		t.Run(fmt.Sprint("weekly=", weekly), func(t *testing.T) {
+			truncate(t)
+			ensureBillingSubscriptionTables(t)
+			t.Cleanup(func() {
+				require.NoError(t, model.DB.Exec("DELETE FROM subscription_pre_consume_records").Error)
+				require.NoError(t, model.DB.Exec("DELETE FROM subscription_plans").Error)
+			})
+			const userID, tokenID, planID, subscriptionID = 9401, 9402, 9403, 9404
+			const available, estimate, actual = 28_900_632, 29_001_985, 126_490
+			seedUser(t, userID, 1_593_829)
+			seedToken(t, tokenID, userID, "partial-sub-token", estimate*2)
+			seedBillingSubscription(t, planID, subscriptionID, userID, available, true)
+			if weekly {
+				require.NoError(t, model.DB.Model(&model.UserSubscription{}).Where("id = ?", subscriptionID).Updates(map[string]interface{}{
+					"amount_total": 50_000_000, "weekly_amount": available, "weekly_reset_time": time.Now().Add(24 * time.Hour).Unix(),
+				}).Error)
+			}
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			info := billingSessionRelayInfo(userID, tokenID, "partial-sub-token", "subscription_first", "partial-sub-request")
+			info.ForcePreConsume = false
+			info.IsPlayground = false
+			session, apiErr := NewBillingSession(ctx, info, estimate)
+			require.Nil(t, apiErr)
+			assert.Equal(t, BillingSourceSubscription, info.BillingSource)
+			assert.Equal(t, available, session.GetPreConsumedQuota())
+			assert.Equal(t, int64(available), getSubscriptionUsed(t, subscriptionID))
+			assert.Equal(t, estimate*2-available, getTokenRemainQuota(t, tokenID))
+			assert.Equal(t, 1_593_829, getUserQuota(t, userID))
+			// A second in-flight request cannot spend the first request's reservation.
+			second := billingSessionRelayInfo(userID, tokenID, "partial-sub-token", "subscription_only", "partial-sub-second")
+			second.ForcePreConsume = false
+			_, secondErr := NewBillingSession(ctx, second, estimate)
+			require.NotNil(t, secondErr)
+			require.NoError(t, session.Settle(actual))
+			assert.Equal(t, int64(actual), getSubscriptionUsed(t, subscriptionID))
+			assert.Equal(t, estimate*2-actual, getTokenRemainQuota(t, tokenID))
+			assert.Equal(t, int64(actual-available), info.SubscriptionPostDelta)
+			if weekly {
+				var sub model.UserSubscription
+				require.NoError(t, model.DB.First(&sub, subscriptionID).Error)
+				assert.Equal(t, int64(actual), sub.WeeklyUsed)
+			}
+			// The returned quota is reusable; a failed next request refunds exactly
+			// its capped reservation, including on a repeated refund attempt.
+			next, nextErr := NewBillingSession(ctx, second, estimate)
+			require.Nil(t, nextErr)
+			assert.Equal(t, available-actual, next.GetPreConsumedQuota())
+			require.Error(t, next.Settle(available))
+			funding := next.funding.(*SubscriptionFunding)
+			require.NoError(t, funding.Refund())
+			require.NoError(t, funding.Refund())
+			assert.Equal(t, int64(actual), getSubscriptionUsed(t, subscriptionID))
+		})
+	}
+}
+
+func TestBillingSessionSubscriptionReservationBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		force, fixed         bool
+		estimate, tokenQuota int
+		wantCode             types.ErrorCode
+	}{
+		{name: "async requires full cost", force: true, estimate: 80, tokenQuota: 100, wantCode: types.ErrorCodeInsufficientUserQuota},
+		{name: "fixed price requires full cost", fixed: true, estimate: 80, tokenQuota: 100, wantCode: types.ErrorCodeInsufficientUserQuota},
+		{name: "saturated estimate cannot bypass quota", estimate: math.MaxInt32, tokenQuota: math.MaxInt32, wantCode: types.ErrorCodeInsufficientUserQuota},
+		{name: "token rejection refunds subscription", estimate: 80, tokenQuota: 20, wantCode: types.ErrorCodePreConsumeTokenQuotaFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncate(t)
+			ensureBillingSubscriptionTables(t)
+			t.Cleanup(func() {
+				require.NoError(t, model.DB.Exec("DELETE FROM subscription_pre_consume_records").Error)
+				require.NoError(t, model.DB.Exec("DELETE FROM subscription_plans").Error)
+			})
+			seedUser(t, 9411, 0)
+			seedToken(t, 9412, 9411, "boundary-sub-token", tc.tokenQuota)
+			seedBillingSubscription(t, 9413, 9414, 9411, 50, false)
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			info := billingSessionRelayInfo(9411, 9412, "boundary-sub-token", "subscription_only", "boundary-request")
+			info.ForcePreConsume = tc.force
+			info.PriceData.UsePrice = tc.fixed
+			info.IsPlayground = false
+			_, apiErr := NewBillingSession(ctx, info, tc.estimate)
+			require.NotNil(t, apiErr)
+			assert.Equal(t, tc.wantCode, apiErr.GetErrorCode())
+			assert.Zero(t, getSubscriptionUsed(t, 9414))
+			assert.Equal(t, tc.tokenQuota, getTokenRemainQuota(t, 9412))
+			if tc.wantCode == types.ErrorCodePreConsumeTokenQuotaFailed {
+				require.NoError(t, model.RefundSubscriptionPreConsume("boundary-request"))
+				assert.Zero(t, getSubscriptionUsed(t, 9414))
+			}
+		})
+	}
+}
 
 func TestBillingSessionReserveWalletCannotOverdraw(t *testing.T) {
 	truncate(t)

@@ -1235,6 +1235,17 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 
 // PreConsumeUserSubscription pre-consumes from any active subscription total quota.
 func PreConsumeUserSubscription(requestId string, userId int, modelName string, quotaType int, amount int64) (*SubscriptionPreConsumeResult, error) {
+	return reserveUserSubscription(requestId, userId, amount, false)
+}
+
+// ReserveUserSubscriptionUpTo reserves available quota under the subscription lock.
+// Estimates may exceed the remaining balance; zero available quota still fails.
+// Fixed-price and asynchronous requests must use PreConsumeUserSubscription instead.
+func ReserveUserSubscriptionUpTo(requestId string, userId int, amount int64) (*SubscriptionPreConsumeResult, error) {
+	return reserveUserSubscription(requestId, userId, amount, true)
+}
+
+func reserveUserSubscription(requestId string, userId int, amount int64, allowPartial bool) (*SubscriptionPreConsumeResult, error) {
 	if userId <= 0 {
 		return nil, errors.New("invalid userId")
 	}
@@ -1291,20 +1302,32 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				return err
 			}
 			usedBefore := sub.AmountUsed
-			if sub.AmountTotal > 0 {
-				remain := sub.AmountTotal - usedBefore
-				if remain < amount {
+			reserved := amount
+			if allowPartial {
+				if sub.AmountTotal > 0 {
+					reserved = min(reserved, sub.AmountTotal-usedBefore)
+				}
+				if sub.WeeklyAmount > 0 {
+					reserved = min(reserved, sub.WeeklyAmount-sub.WeeklyUsed)
+				}
+				if reserved <= 0 {
 					continue
 				}
 			}
-			if amount > math.MaxInt64-sub.AmountUsed || (sub.WeeklyAmount > 0 && amount > sub.WeeklyAmount-sub.WeeklyUsed) {
+			if sub.AmountTotal > 0 {
+				remain := sub.AmountTotal - usedBefore
+				if remain < reserved {
+					continue
+				}
+			}
+			if reserved > math.MaxInt64-sub.AmountUsed || (sub.WeeklyAmount > 0 && reserved > sub.WeeklyAmount-sub.WeeklyUsed) {
 				continue
 			}
 			record := &SubscriptionPreConsumeRecord{
 				RequestId:          requestId,
 				UserId:             userId,
 				UserSubscriptionId: sub.Id,
-				PreConsumed:        amount,
+				PreConsumed:        reserved,
 				CreatedAt:          now,
 				Status:             "consumed",
 			}
@@ -1324,15 +1347,15 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 				}
 				return err
 			}
-			sub.AmountUsed += amount
+			sub.AmountUsed += reserved
 			if sub.WeeklyAmount > 0 {
-				sub.WeeklyUsed += amount
+				sub.WeeklyUsed += reserved
 			}
 			if err := tx.Save(&sub).Error; err != nil {
 				return err
 			}
 			returnValue.UserSubscriptionId = sub.Id
-			returnValue.PreConsumed = amount
+			returnValue.PreConsumed = reserved
 			returnValue.AmountTotal = sub.AmountTotal
 			returnValue.AmountUsedBefore = usedBefore
 			returnValue.AmountUsedAfter = sub.AmountUsed
