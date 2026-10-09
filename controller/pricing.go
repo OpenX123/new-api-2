@@ -1,10 +1,11 @@
 package controller
 
 import (
+	"sort"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -20,15 +21,25 @@ func filterPricingByUsableGroups(pricing []model.Pricing, usableGroup map[string
 
 	filtered := make([]model.Pricing, 0, len(pricing))
 	for _, item := range pricing {
+		groups := make([]string, 0, len(item.EnableGroup))
 		if common.StringsContains(item.EnableGroup, "all") {
-			filtered = append(filtered, item)
-			continue
-		}
-		for _, group := range item.EnableGroup {
-			if _, ok := usableGroup[group]; ok {
-				filtered = append(filtered, item)
-				break
+			for group := range usableGroup {
+				if group != "auto" {
+					groups = append(groups, group)
+				}
 			}
+			sort.Strings(groups)
+		} else {
+			for _, group := range item.EnableGroup {
+				if _, ok := usableGroup[group]; ok {
+					groups = append(groups, group)
+				}
+			}
+		}
+		if len(groups) > 0 {
+			// GetPricing returns shared cached slices; never filter them in place.
+			item.EnableGroup = groups
+			filtered = append(filtered, item)
 		}
 	}
 	return filtered
@@ -42,34 +53,35 @@ func GetPricing(c *gin.Context) {
 	for s, f := range ratio_setting.GetGroupRatioCopy() {
 		groupRatio[s] = f
 	}
-	var group string
+	// Public visitors follow the default user's visibility rules.
+	group := "default"
 	if exists {
 		user, err := model.GetUserCache(userId.(int))
-		if err == nil {
-			group = user.Group
-			for g := range groupRatio {
-				ratio, ok := ratio_setting.GetGroupGroupRatio(group, g)
-				if ok {
-					groupRatio[g] = ratio
-				}
+		if err != nil {
+			c.JSON(200, gin.H{"success": false, "message": "Failed to load user groups"})
+			return
+		}
+		group = user.Group
+		for g := range groupRatio {
+			ratio, ok := ratio_setting.GetGroupGroupRatio(group, g)
+			if ok {
+				groupRatio[g] = ratio
 			}
 		}
 	}
 
-	// 模型广场展示全部模型与分组(展示与可用解耦):不再按用户可用分组过滤,
-	// 令牌可选分组仍由 /api/user/self/groups (GetUserGroups) 单独控制。
-	usableGroup = map[string]string{}
-	for g := range ratio_setting.GetGroupRatioCopy() {
-		desc := setting.GetUsableGroupDescription(g)
-		if desc == "" {
-			desc = g
-		}
-		usableGroup[g] = desc
-	}
-	// 用户真实可用分组的描述优先(含特殊可用分组与自身分组)
+	// Use the same visibility rules as token management, including blocked groups.
 	for g, desc := range service.GetUserUsableGroups(group) {
-		usableGroup[g] = desc
+		if _, configured := groupRatio[g]; configured || g == "auto" {
+			usableGroup[g] = desc
+		}
 	}
+	for g := range groupRatio {
+		if _, visible := usableGroup[g]; !visible {
+			delete(groupRatio, g)
+		}
+	}
+	pricing = filterPricingByUsableGroups(pricing, usableGroup)
 
 	c.JSON(200, gin.H{
 		"success":            true,
